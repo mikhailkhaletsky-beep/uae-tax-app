@@ -6,7 +6,7 @@ Static website: no server, no database, no build step on the host. The finished 
 ## Pilot scope
 
 - Federal Decree-Law No. 47 of 2022 (consolidated text, with the FTA edition of 24 Oct 2025 as an archived edition)
-- The amending Decree-Laws No. 60 of 2023, 40 of 2024 and 28 of 2025 (status pages; texts pending)
+- The amending Decree-Laws No. 60 of 2023 and 28 of 2025 (status pages; texts pending) and No. 40 of 2024 (machine translation of the Arabic original, `sources/manual/L-03_EN.txt`)
 - Cabinet Decisions made under the Law (17 acts)
 - Related acts: Federal Decree-Law No. 28 of 2022 (Tax Procedures) and Cabinet Decision No. 74 of 2023 (its Executive Regulation)
 

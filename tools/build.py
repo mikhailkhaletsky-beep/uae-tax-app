@@ -81,10 +81,10 @@ for _a in A.ACTS:
     if m:
         BYREF[(m.group(1), int(m.group(2)), int(m.group(3)))] = _a["id"]
 
-ART_RE = re.compile(r"\b(?P<w>Articles?)\s*\(?(?P<num>\d+(?:\.\d+)*)\)?(?P<bis>\s*\(?bis\)?)?")
+ART_RE = re.compile(r"\b(?P<w>Articles?)\s*\(?(?P<num>\d+(?:\.\d+)*)\)?(?P<bis>\s*\(?bis\)?)?(?P<more>(?:\s*(?:,|and|or)\s*\(\d+\))*)")
 TAIL_RE = re.compile(
     r"^(?:\s*,?\s*(?:(?:and|or)\s+)?(?:Clauses?|Paragraphs?|Sub-?clauses?|Items?|Subparagraphs?)\s*\(?[0-9A-Za-z]+\)?(?:\s*\(\s*[0-9A-Za-z]+\s*\))*)*"
-    r"\s*(?:of|in|under)\s+(?:the\s+)?(?P<this>this\s+)?"
+    r"\s*(?:of|in|under)\s+(?:the\s+)?(?:aforementioned\s+)?(?P<this>this\s+)?"
     r"(?P<who>(?:Federal Decree-Law|Cabinet Decision)\s+No\.?\s*\(?\d+\)?\s*(?:of|for)\s*\d{4}|Federal Decree-Law|Decree-Law|Executive Regulation|Decision|Regulation|Corporate Tax Law|Tax Procedures Law|Tax Law|Law)"
 )
 
@@ -145,7 +145,7 @@ def link_text(text, aid, ctx_art=None, collect=False, page_ed=None):
         target = None
         if mt:
             if mt.group("this"):
-                target = aid
+                target = a.get("this_target", aid)      # amending acts quote text in which "this Decree-Law" is the amended law
             else:
                 who = mt.group("who")
                 mr = ACT_REF_RE.match(who)
@@ -163,24 +163,27 @@ def link_text(text, aid, ctx_art=None, collect=False, page_ed=None):
             target = aid
         if not target or target not in ARTS:
             continue
-        while num not in ARTS[target] and "." in num:       # "Article 1.2.2" -> clause 2 of Article 1.2
-            num = num.rsplit(".", 1)[0]
-        if num not in ARTS[target]:
-            continue
-        art_id, art_title = ARTS[target][num]
-        if target == aid and (page_ed is None or page_ed == current_ed(a)["id"]):
-            href = "#" + art_id
-        elif target == aid:
-            href = "#" + art_id
-        else:
-            href = act_url(target) + "#" + art_id
-        tip = f"{ACTS[target]['short']}, Article {num}" + (f" - {art_title}" if art_title else "")
-        label = m.group(0)
-        spans.append((m.start(), m.end(), f'<a class="xref" href="{href}" title="{esc(tip)}">{esc(label)}</a>'))
-        if collect and target != aid and ctx_art:
-            BACK[target][art_id].append((aid, ctx_art[0], ctx_art[1]))
-            CITES[aid].add(target)
-            CITED_BY[target].add(aid)
+        # the first number plus any further "(N)" numbers of a list such as "Articles (45) and (46)"
+        refs = [(num, m.start(), m.end() - len(m.group("more")))]
+        for mm in re.finditer(r"\((\d+)\)", m.group("more")):
+            refs.append((mm.group(1), m.start("more") + mm.start(), m.start("more") + mm.end()))
+        for num, rs, re_ in refs:
+            while num not in ARTS[target] and "." in num:       # "Article 1.2.2" -> clause 2 of Article 1.2
+                num = num.rsplit(".", 1)[0]
+            if num not in ARTS[target]:
+                continue
+            art_id, art_title = ARTS[target][num]
+            if target == aid:
+                href = "#" + art_id
+            else:
+                href = act_url(target) + "#" + art_id
+            tip = f"{ACTS[target]['short']}, Article {num}" + (f" - {art_title}" if art_title else "")
+            label = text[rs:re_]
+            spans.append((rs, re_, f'<a class="xref" href="{href}" title="{esc(tip)}">{esc(label)}</a>'))
+            if collect and target != aid and ctx_art:
+                BACK[target][art_id].append((aid, ctx_art[0], ctx_art[1]))
+                CITES[aid].add(target)
+                CITED_BY[target].add(aid)
     # act mentions
     for m in ACT_REF_RE.finditer(text):
         key = (m.group("kind"), int(m.group("no")), int(m.group("yr")))

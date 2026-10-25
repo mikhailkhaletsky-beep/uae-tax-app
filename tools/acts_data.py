@@ -65,13 +65,14 @@ ACTS = [
     dict(
         id="L-03", slug="fdl-40-2024", group="law", short="Federal Decree-Law No. 40 of 2024",
         subject="Amending FDL 47/2022",
-        title="Federal Decree-Law No. 40 of 2024 amending certain provisions of Federal Decree-Law No. 47 of 2022 (exact title to be confirmed)",
+        title="Federal Decree-Law No. 40 of 2024 Amending Certain Provisions of Federal Decree-Law No. 47 of 2022 on the Taxation of Corporations and Businesses",
         topics=["Core law"],
         status="in_force", status_label="In force",
         issued="2024-10-01", effective="2023-06-01",
-        editions=[],
-        pending="The standalone text has not been located on the Ministry of Finance or Federal Tax Authority portals. Its effect is incorporated in the consolidated text of Federal Decree-Law No. 47 of 2022 (see the footnotes in that text).",
-        amends=["L-01"],
+        editions=[dict(id="machine", label="Machine translation of the Arabic original (no official English text found)", short="Machine translation",
+                       date="2024-10-01", src="L-03_EN", manual=True, machine=True, ar="L-03_AR-MOJ",
+                       ar_publisher="Ministry of Justice (moj.gov.ae)", current=True, publisher="Machine translation")],
+        amends=["L-01"], this_target="L-01",
     ),
     dict(
         id="L-04", slug="fdl-28-2025", group="law", short="Federal Decree-Law No. 28 of 2025",
