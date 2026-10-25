@@ -1,0 +1,224 @@
+"""Load editions (PDF -> text -> blocks) and build the in-memory model used by the site generator."""
+import os
+import re
+import subprocess
+
+import textparse as T
+import acts_data as A
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+PDF_DIR = os.path.join(ROOT, "sources", "pdf")
+MANUAL_DIR = os.path.join(ROOT, "sources", "manual")
+CACHE = os.path.join(ROOT, "build", "txt")
+
+STOP_ID_RE = re.compile(r"[^a-z0-9]+")
+
+
+def pdf_text(key, crop=None):
+    os.makedirs(CACHE, exist_ok=True)
+    tag = "crop" if crop else "lay"
+    out = os.path.join(CACHE, f"{key}.{tag}.txt")
+    pdf = os.path.join(PDF_DIR, key + ".pdf")
+    if not os.path.exists(out) or os.path.getmtime(out) < os.path.getmtime(pdf):
+        cmd = ["pdftotext", "-layout"] + (crop.split() if crop else []) + [pdf, out]
+        subprocess.run(cmd, check=True, stderr=subprocess.DEVNULL)
+    return out
+
+
+def edition_text_path(ed):
+    if ed.get("manual"):
+        return os.path.join(MANUAL_DIR, ed["src"] + ".txt")
+    return pdf_text(ed["src"], ed.get("crop"))
+
+
+def tidy_title(t):
+    return re.sub(r"(\w)- (?=[A-Z])", r"\1-", t or "")
+
+
+def attach_notes(blocks, notes):
+    """Attach footnote numbers (sequential through the document) to titles / defs / paragraph ends.
+    A mark may carry several numbers glued together ("13,14")."""
+    nxt = 1
+    attached = {}
+    MK = r"(\d{1,4}(?:\s*,\s*\d{1,4})*)"      # titles and terms: glued marks such as "1314" are allowed
+    MKP = r"(\d{1,2}(?:\s*,\s*\d{1,2})*)"       # running text: one or two digits per mark, to avoid eating years
+
+    def seq(digits, cur):
+        """Split a run of digits ("1314") into consecutive footnote numbers starting near `cur`."""
+        if not digits:
+            return []
+        for ln in (2, 1):
+            if len(digits) >= ln:
+                n = int(digits[:ln])
+                if str(n) in notes and cur <= n <= cur + 3 and not (ln == 2 and digits[0] == "0"):
+                    rest = seq(digits[ln:], n + 1)
+                    if rest is not None:
+                        return [n] + rest
+        return None
+
+    def take(markstr):
+        nonlocal nxt
+        cur, nums = nxt, []
+        for tok in re.split(r"\s*,\s*", markstr.strip()):
+            got = seq(tok, cur)
+            if got is None:
+                return False
+            nums += got
+            cur = got[-1] + 1
+        for n in nums:
+            attached[str(n)] = notes[str(n)]
+        nxt = cur
+        take.last = ",".join(str(n) for n in nums)
+        return True
+
+    for b in blocks:
+        k = b["kind"]
+        if k in ("chapter", "article") and b.get("title"):
+            b["title"] = tidy_title(b["title"])
+        if k == "chapter":
+            m = re.match(r"^(.*?[A-Za-z])\s*" + MK + r"$", b["title"] or "")
+            if m and take(m.group(2)):
+                b["title"] = m.group(1).strip()
+                b["note"] = take.last
+        elif k == "article":
+            if re.fullmatch(MK, (b["title"] or "").strip()) and (b["title"] or "").strip() and take(b["title"].strip()):
+                b["note"] = take.last
+                b["title"] = ""
+                continue
+            m = re.match(r"^(.*?[A-Za-z)])\s*" + MK + r"$", b["title"] or "")
+            if m and take(m.group(2)):
+                b["title"] = m.group(1).strip()
+                b["note"] = take.last
+        elif k == "defs":
+            rows = []
+            for term, d in b["rows"]:
+                note = ""
+                m = re.match(r"^(.*?[A-Za-z’')])\s*" + MK + r"$", term)
+                if m and take(m.group(2)):
+                    term, note = m.group(1).strip(), take.last
+                rows.append((term, d, note))
+            b["rows"] = rows
+        elif k == "p":
+            m = re.match(r"^(.*[.;:)”a-z])\s?" + MKP + r"$", b["text"])
+            if m and take(m.group(2)):
+                b["text"] = m.group(1)
+                b["note"] = take.last
+    # footnotes we could not place stay available as general notes
+    leftover = {k: v for k, v in notes.items() if k not in attached}
+    return attached, leftover
+
+
+def structure(blocks):
+    """Split blocks into preamble + sections (chapters/articles with their body blocks)."""
+    pre, sections, cur = [], [], None
+    for b in blocks:
+        if b["kind"] == "chapter":
+            sections.append({"type": "chapter", **b})
+            cur = None
+        elif b["kind"] == "article":
+            cur = {"type": "article", **b, "blocks": []}
+            sections.append(cur)
+        else:
+            if cur is None:
+                if sections and sections[-1]["type"] == "chapter":
+                    # text directly under a chapter heading but before an article
+                    sections[-1].setdefault("blocks", []).append(b)
+                else:
+                    pre.append(b)
+            else:
+                cur["blocks"].append(b)
+    sections = split_annex(sections)
+    return pre, sections
+
+
+def split_annex(sections):
+    """Decisions that carry an annexure with its own "Article N - Title" parts and "Article N.M." articles:
+    the numbered parts become headings, so the article numbers stay unique."""
+    arts = [i for i, s in enumerate(sections) if s["type"] == "article"]
+    dotted = [i for i in arts if "." in sections[i]["num"]]
+    if not dotted:
+        return sections
+    first = dotted[0]
+    prev = [i for i in arts if i < first]
+    if not prev or "." in sections[prev[-1]]["num"]:
+        return sections
+    start = prev[-1]
+    out = []
+    # the decision's own last article may end with the annexure title (a paragraph that opens a new page)
+    pre_art = next((j for j in reversed(arts) if j < start), None)
+    annex_title = None
+    if pre_art is not None:
+        bl = sections[pre_art]["blocks"]
+        if len(bl) > 1 and bl[-1]["kind"] == "p" and bl[-1].get("pb") and not bl[-1].get("marker"):
+            annex_title = bl[-1]["text"]
+            sections[pre_art] = dict(sections[pre_art], blocks=bl[:-1])
+    for i, s in enumerate(sections):
+        if i == start and annex_title:
+            out.append({"type": "chapter", "kind": "chapter", "label": "Annexure", "title": annex_title, "id": "annexure"})
+        if s["type"] == "article" and i >= start and "." not in s["num"]:
+            c = {"type": "chapter", "kind": "chapter", "label": "Annex Article " + s["num"], "title": s["title"],
+                 "id": "annex-" + s["num"].replace(" ", "-")}
+            if s.get("blocks"):
+                c["blocks"] = s["blocks"]
+            out.append(c)
+        else:
+            out.append(s)
+    return out
+
+
+def block_plain(b):
+    k = b["kind"]
+    if k == "p":
+        return ((b.get("marker") or "") + " " + b["text"]).strip()
+    if k == "defs":
+        return "\n".join(f"{r[0]}: {r[1]}" for r in b["rows"])
+    if k == "pre":
+        return b["text"]
+    if k == "etable":
+        return b["title"] + "\n" + "\n".join(f"{r[0]}. {r[1]} (effective {r[3]}{'' if r[2] in ('–','-') else ', until ' + r[2]})" for r in b["rows"])
+    return ""
+
+
+def load_edition(act, ed):
+    path = edition_text_path(ed)
+    blocks, notes = T.parse_file(path, want_notes=True)
+    blocks = T.upgrade_tables(blocks)
+    attached, leftover = attach_notes(blocks, notes)
+    pre, sections = structure(blocks)
+    if ed.get("tables_only"):
+        tabs = [b for s in sections if s["type"] == "article" for b in s["blocks"] if b["kind"] == "etable"]
+        pre = []
+        attached, leftover = {}, {}
+        sections = [{"type": "article", "kind": "article", "num": "Lists", "label": "Schedule", "title": "Lists of entities", "id": "lists", "blocks": tabs}]
+    arts = []
+    for s in sections:
+        if s["type"] == "article":
+            plain = "\n".join(block_plain(b) for b in s["blocks"])
+            arts.append({"id": s["id"], "num": s["num"], "title": s["title"], "text": plain})
+    doc = dict(
+        act=act["id"], ed=ed["id"], pre=pre, sections=sections, notes=attached, leftover=leftover, arts=arts,
+        pre_text="\n".join(block_plain(b) for b in pre),
+    )
+    return doc
+
+
+def build_all():
+    acts = {}
+    docs = {}
+    for a in A.ACTS:
+        acts[a["id"]] = a
+        a["current_ed"] = next((e for e in a["editions"] if e.get("current")), None)
+        for ed in a["editions"]:
+            docs[(a["id"], ed["id"])] = load_edition(a, ed)
+    return acts, docs
+
+
+def slug(s):
+    return STOP_ID_RE.sub("-", s.lower()).strip("-")
+
+
+if __name__ == "__main__":
+    acts, docs = build_all()
+    for (aid, eid), d in docs.items():
+        words = sum(len(x["text"].split()) for x in d["arts"])
+        print(f"{aid:6} {eid:16} articles={len(d['arts']):3} sections={len(d['sections']):3} notes={len(d['notes'])}/{len(d['notes'])+len(d['leftover'])} words={words}")
