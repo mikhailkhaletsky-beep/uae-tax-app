@@ -16,7 +16,7 @@ Watch list (not loaded): Cabinet Decision 209 of 2025 and the expected decision 
 
 | Folder | What it holds |
 |---|---|
-| `public/` | The generated website. This is what Cloudflare Pages publishes. Do not edit by hand. |
+| `public/` | The generated website. This is what Cloudflare publishes. Do not edit by hand. |
 | `site/` | CSS, JavaScript and icon copied to `public/assets/`. |
 | `tools/` | The generator: `acts_data.py` (registry of acts and editions), `textparse.py` and `model.py` (PDF text to structured articles), `build.py` (site), `qa.py` (checks). |
 | `sources/pdf/` | Source PDFs exactly as downloaded from mof.gov.ae and tax.gov.ae. File name = `<act id>_<language>-<publisher>.pdf`. |
@@ -36,11 +36,11 @@ python3 tools/build.py    # writes ./public
 
 1. Put the PDF in `sources/pdf/` and its address in `sources/urls.json`.
 2. Add the act or the new edition in `tools/acts_data.py` (the previous edition stays as an archived one: `current=False`).
-3. Run `qa.py`, then `build.py`, check the page, commit and push. Cloudflare Pages publishes automatically.
+3. Run `qa.py`, then `build.py`, check the page, commit and push. Cloudflare publishes automatically (about one to two minutes).
 
 ## Hosting
 
-Cloudflare Pages, connected to this repository. Framework preset: None. Build command: empty. Build output directory: `public`.
+Cloudflare Workers (static assets), project `uae-tax-app`, connected to this repository and published at https://corp.uaetax.app. `wrangler.jsonc` points the Worker at `public/` and serves `public/404.html` for unknown addresses.
 
 ## Weekly check
 
