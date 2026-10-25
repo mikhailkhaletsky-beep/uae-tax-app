@@ -41,3 +41,8 @@ python3 tools/build.py    # writes ./public
 ## Hosting
 
 Cloudflare Pages, connected to this repository. Framework preset: None. Build command: empty. Build output directory: `public`.
+
+## Weekly check
+
+A scheduled task looks at the official listings once a week (Monday morning, Dubai time) and reports acts that are not yet in
+`tools/acts_data.py` or `watch/seen.json`. It only flags; nothing is loaded until the new act is reviewed and added.
