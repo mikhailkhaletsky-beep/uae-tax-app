@@ -19,6 +19,8 @@ import model as M  # noqa: E402
 ROOT = M.ROOT
 OUT = os.path.join(ROOT, "public")
 SITE_NAME = "UAE CT Database"
+SITE_URL = "https://corp.uaetax.app"
+SITEMAP = []
 UPDATED = "25 October 2026"
 HOME_ACT = "L-01"
 
@@ -360,7 +362,7 @@ def page(title, body, active=None, desc="", extra_head="", body_class="", toc=No
         for kind, i, label in toc:
             items.append(f'<li class="{kind}"><a href="#{i}">{esc(label)}</a></li>')
         toc_html = f'<aside class="toc"><details open><summary>On this page</summary><ul>{"".join(items)}</ul></details></aside>'
-    can = f'<link rel="canonical" href="{canonical}">' if canonical else ""
+    can = f'<link rel="canonical" href="{canonical}">' if canonical else "<!--CANON-->"
     return f"""<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -388,6 +390,13 @@ def page(title, body, active=None, desc="", extra_head="", body_class="", toc=No
 
 
 def write(path, content):
+    if path.lstrip("/") == "404.html":
+        content = content.replace("<!--CANON-->", "")
+    if "<!--CANON-->" in content:
+        d = os.path.dirname(path.lstrip("/"))
+        url = SITE_URL + "/" + (d + "/" if d else "")
+        content = content.replace("<!--CANON-->", f'<link rel="canonical" href="{url}">')
+        SITEMAP.append(url)
     full = os.path.join(OUT, path.lstrip("/"))
     os.makedirs(os.path.dirname(full), exist_ok=True)
     with open(full, "w", encoding="utf-8") as f:
@@ -961,7 +970,7 @@ def main():
             if aid == HOME_ACT and is_cur:
                 write("/index.html", html_)
                 write(f"/acts/{a['slug']}/index.html",
-                      '<!doctype html><meta charset="utf-8"><title>Redirect</title><link rel="canonical" href="/"><meta http-equiv="refresh" content="0; url=/"><a href="/">Federal Decree-Law No. 47 of 2022</a>')
+                      '<!doctype html><meta charset="utf-8"><title>Redirect</title><link rel="canonical" href="https://corp.uaetax.app/"><meta http-equiv="refresh" content="0; url=/"><a href="/">Federal Decree-Law No. 47 of 2022</a>')
             else:
                 write(base + "index.html", html_)
             write(base + "arabic/index.html", render_arabic_page(aid, ed))
@@ -979,7 +988,11 @@ def main():
     with open(os.path.join(OUT, "assets", "search-index.json"), "w", encoding="utf-8") as f:
         json.dump(idx, f, ensure_ascii=False, separators=(",", ":"))
     with open(os.path.join(OUT, "robots.txt"), "w") as f:
-        f.write("User-agent: *\nAllow: /\n")
+        f.write(f"User-agent: *\nAllow: /\nSitemap: {SITE_URL}/sitemap.xml\n")
+    with open(os.path.join(OUT, "sitemap.xml"), "w") as f:
+        urls = sorted(set(SITEMAP))
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+                + "".join(f"<url><loc>{u}</loc></url>\n" for u in urls) + "</urlset>\n")
     with open(os.path.join(OUT, "_headers"), "w") as f:      # Cloudflare Pages response headers
         f.write("/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: strict-origin-when-cross-origin\n"
                 "/assets/*\n  Cache-Control: public, max-age=3600\n/ar/*\n  Cache-Control: public, max-age=86400\n")
