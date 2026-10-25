@@ -28,7 +28,6 @@
  "CD-07_AR-MOF": "https://mof.gov.ae/wp-content/uploads/2024/03/قرار-مجلس-الوزراء-رقم-75-لسنة-2023-بشأن-الغرامات-الإدارية-للمخالفات-المرتبطة-بتطبيق-المرسوم-بقانون-اتحادي-رقم-47-لسنة-2022.pdf",
  "CD-07_AR-FTA": "https://tax.gov.ae/Datafolder/Files/Legislation/Cabinet%20Decision%20No.%2075%20of%202023%20and%20amendments%20-%20For%20Publishing%20arabic.pdf",
  "CD-08_EN-MOF": "https://mof.gov.ae/wp-content/uploads/2023/07/Cabinet-Decision-No.-81-of-2023-On-Conditions-for-Qualifying-Investment-Funds-for-the-Purposes-of-Federal-Decree-Law-No.-47-of-2022.pdf",
- "CD-08_AR-MOF": "https://mof.gov.ae/wp-content/uploads/2023/07/قرار-مجلس-الوزراء-رقم-81-لسنة-2023-في-شأن-شروط-صناديق-الاستثمار-المؤهلة-لأغراض-المرسوم-بقانون-اتحادي-رقم-47-لسنة-2022.pdf",
  "CD-09_EN-MOF": "https://mof.gov.ae/wp-content/uploads/2023/11/Cabinet-Decision-No.-100-of-2023-on-Determining-Qualifying-Income-for-the-Qualifying-Free-Zone-Person.pdf",
  "CD-09_EN-FTA": "https://tax.gov.ae/Datafolder/Files/Legislation/Cabinet%20Decision%20No.%20100%20of%202023%20on%20Determining%20Qualifying%20Income%20for%20the%20Qualifying%20Free%20Zone%20Person%20-%20for%20publishing.pdf",
  "CD-09_AR-MOF": "https://mof.gov.ae/wp-content/uploads/2023/11/قرار-مجلس-الوزراء-رقم-100-لسنة-2023-بشأن-تحديد-الدخل-المؤهل-للشخص-المؤهل-القائم-في-المنطقة-الحرة.pdf",
@@ -57,5 +56,7 @@
  "CD-17_AR-MOF": "https://mof.gov.ae/wp-content/uploads/2026/02/Cabinet-Decision-No.1-of-2026-on-Exempting-Certain-Sports-Entities-from-Corporate-Tax-for-the-Purposes-of-Federal-Decree-Law-ar-10.2.26.pdf",
  "R-01_EN-MOF": "https://mof.gov.ae/wp-content/uploads/2026/04/Cabinet-Decision-No.-74-of-2023-on-Executive-Regulation-of-Tax-Procedures-and-its-amendments-en-01.04.26.pdf",
  "R-01_AR-MOF": "https://mof.gov.ae/wp-content/uploads/2026/04/Cabinet-Decision-No.-74-of-2023-on-Executive-Regulation-of-Tax-Procedures-and-its-amendments-ar-01.04.26.pdf",
- "R-02_EN-MOF": "https://mof.gov.ae/wp-content/uploads/2025/11/Federal-Decree-Law-No.-28-of-2022-and-amendments-en-29.11.25.pdf"
+ "R-02_EN-MOF": "https://mof.gov.ae/wp-content/uploads/2025/11/Federal-Decree-Law-No.-28-of-2022-and-amendments-en-29.11.25.pdf",
+ "CD-08_AR-FTA": "https://tax.gov.ae/DataFolder/Files/Legislation/CD%2081%2018-12-2023/Ar-CD81.pdf",
+ "R-02_AR-UAELEG": "https://uaelegislation.gov.ae/ar/legislations/1625/download"
 }

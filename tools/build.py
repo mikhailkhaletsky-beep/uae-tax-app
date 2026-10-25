@@ -500,7 +500,7 @@ def render_arabic_page(aid, ed):
         return page(a["short"] + " (Arabic)", body, active=aid)
     fname = f"{a['slug']}-{ed['id']}-ar.pdf"
     src_url = URLS.get(key, "")
-    body = (f'<article class="doc">{head}<p class="disc">The Arabic original is the authoritative text. It is shown below as published by the {esc(ed["publisher"] if "MOF" in key else ("Federal Tax Authority" if "FTA" in key else "Ministry of Finance"))}.</p>'
+    body = (f'<article class="doc">{head}<p class="disc">The Arabic original is the authoritative text. It is shown below as published by the {esc(ed.get("ar_publisher") or ("Federal Tax Authority" if "FTA" in key else "Ministry of Finance"))}.</p>'
             f'<div class="pdfwrap"><object data="/ar/{fname}#view=FitH" type="application/pdf" aria-label="Arabic original"><p>Your browser cannot display the PDF inline. '
             f'<a href="/ar/{fname}">Open the Arabic original</a>.</p></object></div>'
             f'<p class="provenance"><a href="/ar/{fname}" target="_blank" rel="noopener">Open the Arabic original in a new tab</a>' + (f' · <a href="{esc(src_url)}" rel="noopener">Publisher file</a>' if src_url else "") + '</p></article>')

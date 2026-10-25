@@ -167,7 +167,7 @@ ACTS = [
         topics=["Investment funds and partnerships"], status="repealed", status_label="Repealed (applies to periods before 2025)",
         issued="2023-07-18", effective="Day after publication in the Official Gazette",
         editions=[dict(id="mof", label="Text as published by the Ministry of Finance", short="MOF text", date="2023-07-18",
-                       src="CD-08_EN-MOF", ar=None, current=True, publisher="Ministry of Finance")],
+                       src="CD-08_EN-MOF", ar="CD-08_AR-FTA", ar_publisher="Federal Tax Authority (tax.gov.ae)", current=True, publisher="Ministry of Finance")],
         repealed_by="CD-12",
         status_note="Repealed by Article 8 of Cabinet Decision No. 34 of 2025, but it continues to apply to Tax Periods that commenced before 1 January 2025.",
     ),
@@ -274,7 +274,7 @@ ACTS = [
         topics=["Penalties and procedures"], status="in_force", status_label="In force (as amended)",
         issued="2022-09-30", effective="2023-03-01",
         editions=[dict(id="mof-2026", label="Consolidated text including Federal Decree-Laws No. 17 of 2024 and No. 17 of 2025, Ministry of Finance",
-                       short="MOF consolidated, 29 Nov 2025", date="2025-11-29", src="R-02_EN-MOF", ar=None, current=True, publisher="Ministry of Finance")],
+                       short="MOF consolidated, 29 Nov 2025", date="2025-11-29", src="R-02_EN-MOF", ar="R-02_AR-UAELEG", ar_publisher="UAE Legislation portal (uaelegislation.gov.ae), consolidated text of January 2026", current=True, publisher="Ministry of Finance")],
         history=[
             dict(date="2024-10-30", text="Amended by Federal Decree-Law No. 17 of 2024 (issued 30 Sep 2024)", ref=None),
             dict(date="2026-01-01", text="Amended by Federal Decree-Law No. 17 of 2025 (issued 1 Oct 2025)", ref=None),
