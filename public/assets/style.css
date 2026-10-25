@@ -89,6 +89,16 @@ h1,h2,h3,h4{line-height:1.25}
 .tabs a:hover{color:var(--ink)}
 .tabs li.on a{color:var(--ink);border-bottom-color:var(--accent)}
 .disc,.provenance,.ednote,.small{font-size:13.5px;color:var(--muted)}
+.edbox{margin:16px 0 8px;padding:12px 16px;border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;background:var(--panel);font-size:15px}
+.edbox-h{margin:0 0 4px;font-weight:700}
+.edbox-l{margin:0 0 8px;padding-left:20px}
+.edbox-l li{margin:2px 0}
+.edbox-r{margin:2px 0;color:var(--ink)}
+.ednote b{color:var(--ink)}
+.art-h .prevlink{font-family:var(--sans);font-size:13px;font-weight:400;color:var(--muted);margin-left:6px;white-space:nowrap}
+.art-h a.prevlink{text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:2px;opacity:.85}
+.art-h a.prevlink:hover,.art-h .prevlink a:hover{color:var(--link);opacity:1}
+.art-h .prevlink a{color:inherit}
 .disc{margin:16px 0 4px}
 .provenance{margin-top:30px;padding-top:12px;border-top:1px solid var(--line)}
 

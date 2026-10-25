@@ -1,4 +1,5 @@
 """Load editions (PDF -> text -> blocks) and build the in-memory model used by the site generator."""
+import copy
 import os
 import re
 import subprocess
@@ -202,14 +203,73 @@ def load_edition(act, ed):
     return doc
 
 
+def _recompute_arts(doc):
+    arts = []
+    for s in doc["sections"]:
+        if s["type"] == "article":
+            plain = "\n".join(block_plain(b) for b in s["blocks"])
+            arts.append({"id": s["id"], "num": s["num"], "title": s["title"], "text": plain})
+    doc["arts"] = arts
+
+
+def _find(doc, num):
+    return next(i for i, s in enumerate(doc["sections"]) if s["type"] == "article" and s["num"] == num)
+
+
+def derive_edition(act, ed, docs):
+    """Reconstruct an earlier edition by undoing one amending law on top of the next newer edition.
+    Operations: replace (whole article taken from the source edition "orig2022"), remove (article), defs_remove
+    (definitions of an article), clause_remove (a numbered clause and everything after it in an article)."""
+    spec = ed["derive"]
+    doc = copy.deepcopy(docs[(act["id"], spec["base"])])
+    src = docs[(act["id"], "orig2022")]
+    doc["ed"] = ed["id"]
+    for op in spec["ops"]:
+        kind, num = op[0], op[1]
+        if kind == "replace":
+            old = src["sections"][_find(src, num)]
+            i = _find(doc, num)
+            new = copy.deepcopy(old)
+            new["id"] = doc["sections"][i]["id"]
+            new.pop("note", None)
+            doc["sections"][i] = new
+        elif kind == "remove":
+            del doc["sections"][_find(doc, num)]
+        elif kind == "defs_remove":
+            sec = doc["sections"][_find(doc, num)]
+            gone = set(op[2])
+            hit = 0
+            for b in sec["blocks"]:
+                if b["kind"] == "defs":
+                    before = len(b["rows"])
+                    b["rows"] = [r for r in b["rows"] if r[0] not in gone]
+                    hit += before - len(b["rows"])
+            assert hit == len(gone), (ed["id"], num, "definitions not found", gone)
+        elif kind == "clause_remove":
+            sec = doc["sections"][_find(doc, num)]
+            k = next(i for i, b in enumerate(sec["blocks"]) if b["kind"] == "p" and b.get("marker") == op[2] and b.get("level", 0) == 0)
+            sec["blocks"] = sec["blocks"][:k]
+        else:
+            raise ValueError(kind)
+    doc["notes"], doc["leftover"] = {}, {}
+    _recompute_arts(doc)
+    return doc
+
+
 def build_all():
     acts = {}
     docs = {}
     for a in A.ACTS:
         acts[a["id"]] = a
         a["current_ed"] = next((e for e in a["editions"] if e.get("current")), None)
+        for src in a.get("sources", []):                 # source texts that are not shown as editions
+            docs[(a["id"], src["id"])] = load_edition(a, src)
         for ed in a["editions"]:
-            docs[(a["id"], ed["id"])] = load_edition(a, ed)
+            if not ed.get("derive"):
+                docs[(a["id"], ed["id"])] = load_edition(a, ed)
+        pending = sorted((e for e in a["editions"] if e.get("derive")), key=lambda e: e["date"], reverse=True)
+        for ed in pending:                               # newest first: each edition is built from the next newer one
+            docs[(a["id"], ed["id"])] = derive_edition(a, ed, docs)
     return acts, docs
 
 

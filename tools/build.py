@@ -180,7 +180,7 @@ def link_text(text, aid, ctx_art=None, collect=False, page_ed=None):
             tip = f"{ACTS[target]['short']}, Article {num}" + (f" - {art_title}" if art_title else "")
             label = text[rs:re_]
             spans.append((rs, re_, f'<a class="xref" href="{href}" title="{esc(tip)}">{esc(label)}</a>'))
-            if collect and target != aid and ctx_art:
+            if collect and target != aid and ctx_art and not (a.get("nav") is False and target in a.get("amends", [])):
                 BACK[target][art_id].append((aid, ctx_art[0], ctx_art[1]))
                 CITES[aid].add(target)
                 CITED_BY[target].add(aid)
@@ -275,7 +275,7 @@ def render_doc(doc, aid, ed, collect=False):
         title = f'<span class="art-t">{esc(s["title"])}</span>' if s["title"] else ""
         parts.append(
             f'<section class="art" id="{s["id"]}"><h3 class="art-h"><a class="anchor" href="#{s["id"]}" aria-label="Link to {esc(label)}">#</a>'
-            f'<span class="art-n">{esc(label)}</span> {title}{fn_mark(s.get("note"))}</h3>{amend}{back}{body}</section>'
+            f'<span class="art-n">{esc(label)}</span> {title}{fn_mark(s.get("note"))}{prev_link_html(aid, page_ed, s["id"], label)}</h3>{amend}{back}{body}</section>'
         )
     notes = ""
     if doc["notes"] or doc["leftover"]:
@@ -287,6 +287,60 @@ def render_doc(doc, aid, ed, collect=False):
         )
         notes = f'<section class="notes"><h2>Notes</h2><ol>{items}</ol></section>'
     return "\n".join(parts) + notes, toc
+
+
+def law_label(lid):
+    """"Federal Decree-Law No. 60/2023" from the registry's short name."""
+    return re.sub(r"No\. (\d+) of (\d{4})", r"No. \1/\2", ACTS[lid]["short"])
+
+
+def ddmmyyyy(iso):
+    y, m, d = iso.split("-")
+    return f"{d}/{m}/{y}"
+
+
+# Previous-edition links. For every article of an edition we look for the nearest older edition in which the article
+# reads differently ("prev") or does not exist yet ("added"). Only acts whose editions are successive amendment levels
+# of one text (they carry `derive`) get these links; editions published by different bodies are not comparable.
+PREV = {}
+
+
+def build_prev():
+    for aid in ORDER:
+        a = ACTS[aid]
+        if not any(e.get("derive") for e in a["editions"]):
+            continue
+        eds = sorted(a["editions"], key=lambda e: e["date"], reverse=True)       # newest first
+        sigs = {e["id"]: {x["id"]: (x["title"], x["text"]) for x in DOCS[(aid, e["id"])]["arts"]} for e in eds}
+        for i, e in enumerate(eds):
+            m = {}
+            for art_id, sg in sigs[e["id"]].items():
+                for k in range(i + 1, len(eds)):
+                    older = sigs[eds[k]["id"]]
+                    if art_id not in older:
+                        m[art_id] = ("added", eds[k - 1].get("law"))          # the amending law that introduced it
+                        break
+                    if older[art_id] != sg:
+                        m[art_id] = ("prev", eds[k]["id"])
+                        break
+            PREV[(aid, e["id"])] = m
+
+
+build_prev()
+
+
+def prev_link_html(aid, ed_id, art_id, label):
+    m = PREV.get((aid, ed_id), {}).get(art_id)
+    if not m:
+        return ""
+    kind, ref = m
+    if kind == "prev":
+        e = ed_by_id(ACTS[aid], ref)
+        return (f' <a class="prevlink" href="{act_url(aid, ref)}#{art_id}" '
+                f'title="{esc(label)} as it read in: {esc(e["short"])}">(see previous edition)</a>')
+    if ref:
+        return f' <span class="prevlink">(added by <a href="{act_url(ref)}">{esc(law_label(ref))}</a>)</span>'
+    return ""
 
 
 # first pass: render all current editions (collect backlinks / citations)
@@ -321,10 +375,12 @@ def fill_backrefs(h):
 
 # --------------------------------------------------------------------------- page shell
 def sidebar_html(active=None):
+    if active and ACTS[active].get("nav") is False:           # an amending law: highlight the law it amends
+        active = ACTS[active]["amends"][0]
     out = ['<nav class="side" aria-label="Acts">']
     out.append('<div class="side-top"><a class="side-link" href="/search/">Search and filter all acts</a></div>')
     for gid, gname in A.GROUPS:
-        items = [aid for aid in ORDER if ACTS[aid]["group"] == gid]
+        items = [aid for aid in ORDER if ACTS[aid]["group"] == gid and ACTS[aid].get("nav", True)]
         if not items:
             continue
         out.append(f'<h4>{esc(gname)}</h4><ul>')
@@ -446,7 +502,8 @@ def act_header(aid, ed_id, active_tab):
         ed = ed_by_id(a, ed_id)
         banners.append(
             f'<div class="banner warn"><b>Archived edition.</b> You are reading “{esc(ed["label"])}”. '
-            f'<a href="{act_url(aid)}">Go to the current edition</a> · <a href="{compare_url(aid, ed_id, cur["id"])}">Compare with the current edition</a></div>')
+            f'<a href="{act_url(aid)}">Go to the current edition</a> · <a href="{compare_url(aid, ed_id, cur["id"])}">Compare with the current edition</a> · '
+            f'<a href="{act_url(aid, None, "versions")}">Version log</a></div>')
     if cur and cur.get("machine"):
         banners.append('<div class="banner warn"><b>Machine translation.</b> No official English text was found for this act. The English below is an unofficial machine translation of the Arabic original, which prevails. Check it against the Arabic original tab.</div>')
     switch = ""
@@ -464,6 +521,46 @@ def act_header(aid, ed_id, active_tab):
             f'<div class="chips">{status_chip(a)}{switch}</div>{ed_line}{"".join(banners)}{meta_block(a)}{tabs(aid, ed_id, active_tab)}</div>')
 
 
+def edition_box(a, ed):
+    """Header of an edition of a law: which amending laws it reflects and from when it applies."""
+    if "applies" not in ed:
+        return ""
+    if ed.get("amended_by"):
+        lis = "".join(f'<li><a href="{act_url(x)}">{esc(law_label(x))}</a> dated {ddmmyyyy(ACTS[x]["issued"])}</li>' for x in ed["amended_by"])
+        head = f'<p class="edbox-h">As Amended by:</p><ul class="edbox-l">{lis}</ul>'
+    else:
+        head = '<p class="edbox-h">Original text, as issued (before any amendment)</p>'
+    rows = f'<p class="edbox-r"><b>Applies from:</b> {esc(ed["applies"])}</p>'
+    if ed.get("until"):
+        rows += f'<p class="edbox-r"><b>Superseded:</b> {esc(ed["until"])}</p>'
+    elif ed.get("current"):
+        rows += '<p class="edbox-r"><b>Status:</b> current edition</p>'
+    return f'<div class="edbox">{head}{rows}</div>'
+
+
+def derive_note(a, ed):
+    """Plain-language list of what was undone to reconstruct an earlier edition."""
+    base = ed_by_id(a, ed["derive"]["base"])
+    law = ACTS[base["law"]]
+    parts = []
+    for op in ed["derive"]["ops"]:
+        k, num = op[0], op[1]
+        if k == "replace":
+            parts.append(f"Article {num} restored to its wording before the amendment")
+        elif k == "remove":
+            parts.append(f"Article {num} removed (it did not exist yet)")
+        elif k == "defs_remove":
+            parts.append(f"Article {num}: the definitions of " + " and ".join(op[2]) + " removed (not yet added)")
+        elif k == "clause_remove":
+            parts.append(f"Article {num}: clause {op[2].rstrip('.')} removed (not yet added)")
+    url = URLS.get(a["sources"][0]["src"], "")
+    link = f' (<a href="{esc(url)}" rel="noopener">Ministry of Finance, 2022</a>)' if url else ""
+    return (f'<p class="ednote"><b>Reconstructed edition.</b> This text was rebuilt for this database from the next later edition by undoing '
+            f'{esc(law_label(base["law"]))}: ' + "; ".join(esc(x) for x in parts) +
+            f'. Replaced articles are taken from the original English text published by the Ministry of Finance in 2022{link}, '
+            f'so their wording and terminology can differ slightly from the surrounding articles. The Arabic text prevails.</p>')
+
+
 def render_text_page(aid, ed):
     a = ACTS[aid]
     cur = current_ed(a)
@@ -475,13 +572,19 @@ def render_text_page(aid, ed):
         intro = ('<div class="hero"><p>Full texts of UAE corporate tax legislation with search, editions and cross-references. '
                  'The page below is the current consolidated text of the Corporate Tax Law. Use the contents list to jump to an article; '
                  'the box under each article shows the Cabinet Decisions that refer to it.</p></div>')
-    src_url = URLS.get(ed["src"]) if not ed.get("manual") else None
+    src_url = URLS.get(ed["src"]) if not ed.get("manual") and not ed.get("derive") else None
     src = ""
-    if src_url:
+    if ed.get("derive"):
+        src = ""
+    elif ed.get("source_url"):
+        src = (f'<p class="provenance">Source: {esc(ed.get("source_name") or ed["publisher"])}, consolidated text copied on 25 October 2026. '
+               f'<a href="{esc(ed["source_url"])}" rel="noopener">Original page</a>.</p>')
+    elif src_url:
         src = f'<p class="provenance">Source: {esc(ed["publisher"])} publication, ed. “{esc(ed["short"])}”. <a href="{esc(src_url)}" rel="noopener">Original file</a>.</p>'
     elif ed.get("manual"):
         src = '<p class="provenance">Source: machine translation prepared for this database from the Arabic original.</p>'
     ed_note = f'<p class="ednote">{esc(ed["note"])}</p>' if ed.get("note") else ""
+    ed_note = edition_box(a, ed) + (derive_note(a, ed) if ed.get("derive") else "") + ed_note
     disc = "" if ed.get("machine") else '<p class="disc">Unofficial English translation. The Arabic text prevails.</p>'
     body = f'{intro}<article class="doc">{head}{ed_note}{disc}<div class="text">{h}</div>{src}</article>'
     return page(a["short"], body, active=aid, toc=toc, desc=a["title"],
@@ -507,12 +610,19 @@ def render_arabic_page(aid, ed):
     cur = current_ed(a)
     head = act_header(aid, ed["id"] if ed["id"] != cur["id"] else None, "arabic")
     key = ed.get("ar")
+    if not key and ed.get("derive"):
+        lis = "".join(f'<li><a href="{act_url(x, None, "arabic")}"><b>{esc(law_label(x))}</b></a> – Arabic original of the amending law</li>' for x in ed.get("amended_by", []))
+        lis += f'<li><a href="{act_url(aid, None, "arabic")}"><b>Current consolidated text</b></a> – Arabic, Ministry of Finance (13 January 2026)</li>'
+        body = (f'<article class="doc">{head}<div class="banner warn"><b>No separate Arabic text for this archived edition.</b> '
+                f'The edition is reconstructed from the English text, so there is no Arabic file of exactly this wording. '
+                f'The Arabic originals of the amending laws and the current Arabic consolidated text are available here:</div><ul class="rel">{lis}</ul></article>')
+        return page(a["short"] + " (Arabic original)", body, active=aid)
     if not key:
         body = f'<article class="doc">{head}<div class="banner warn"><b>Arabic original not yet loaded for this edition.</b> The Arabic text prevails over the English. It will be added when the file is located.</div></article>'
         return page(a["short"] + " (Arabic)", body, active=aid)
     fname = f"{a['slug']}-{ed['id']}-ar.pdf"
     src_url = URLS.get(key, "")
-    body = (f'<article class="doc">{head}<p class="disc">The Arabic original is the authoritative text. It is shown below as published by the {esc(ed.get("ar_publisher") or ("Federal Tax Authority" if "FTA" in key else "Ministry of Finance"))}.</p>'
+    body = (f'<article class="doc">{head}<p class="disc">The Arabic original is the authoritative text. It is {esc(ed.get("ar_phrase") or "shown below as published by the " + (ed.get("ar_publisher") or ("Federal Tax Authority" if "FTA" in key else "Ministry of Finance")))}.</p>'
             f'<div class="pdfwrap"><object data="/ar/{fname}#view=FitH" type="application/pdf" aria-label="Arabic original"><p>Your browser cannot display the PDF inline. '
             f'<a href="/ar/{fname}">Open the Arabic original</a>.</p></object></div>'
             f'<p class="provenance"><a href="/ar/{fname}" target="_blank" rel="noopener">Open the Arabic original in a new tab</a>' + (f' · <a href="{esc(src_url)}" rel="noopener">Publisher file</a>' if src_url else "") + '</p></article>')
@@ -524,12 +634,22 @@ def render_versions_page(aid):
     cur = current_ed(a)
     head = act_header(aid, None, "versions") if cur else act_header_pending(aid)
     eds = sorted_editions(a)
+    law_log = any(e.get("amended_by") is not None for e in eds)        # editions that are successive amendment levels of one law
     rows = []
     for e in reversed(eds):
         st = '<span class="chip ok">Current</span>' if e.get("current") else '<span class="chip arch">Archived</span>'
         view = f'<a href="{act_url(aid, e["id"])}">Read</a>'
-        ar = f' · <a href="{act_url(aid, e["id"], "arabic")}">Arabic</a>' if e.get("ar") else ""
-        rows.append(f'<tr><td>{fmt_date(e["date"])}</td><td>{esc(e["label"])}{"<br><small>" + esc(e.get("note", "")) + "</small>" if e.get("note") else ""}</td><td>{st}</td><td>{view}{ar}</td></tr>')
+        ar = f' · <a href="{act_url(aid, e["id"], "arabic")}">Arabic</a>' if (e.get("ar") or e.get("derive")) else ""
+        if law_log:
+            if e.get("amended_by"):
+                amb = "As amended by " + ", ".join(f'<a href="{act_url(x)}">{esc(law_label(x))}</a>' for x in e["amended_by"])
+            else:
+                amb = "Original text, as issued"
+            recon = "<br><small>Reconstructed for this database from the next later edition.</small>" if e.get("derive") else ""
+            sup = f'<br><small>Superseded: {esc(e["until"])}</small>' if e.get("until") else ""
+            rows.append(f'<tr><td>{esc(e["applies"])}</td><td><b>{amb}</b>{recon}{sup}</td><td>{st}</td><td>{view}{ar}</td></tr>')
+        else:
+            rows.append(f'<tr><td>{fmt_date(e["date"])}</td><td>{esc(e["label"])}{"<br><small>" + esc(e.get("note", "")) + "</small>" if e.get("note") else ""}</td><td>{st}</td><td>{view}{ar}</td></tr>')
     cmp = ""
     if len(eds) > 1:
         links = []
@@ -537,6 +657,14 @@ def render_versions_page(aid):
             for j in range(i + 1, len(eds)):
                 links.append(f'<li><a href="{compare_url(aid, eds[i]["id"], eds[j]["id"])}">{esc(eds[i]["short"])} &rarr; {esc(eds[j]["short"])}</a></li>')
         cmp = f'<h2>Compare editions</h2><p>Legal redline: deleted words are struck through, added words are underlined.</p><ul class="cmp">{"".join(links)}</ul>'
+    amend = ""
+    amenders = [x["id"] for x in A.ACTS if aid in x.get("amends", []) and x.get("nav") is False]
+    if amenders:
+        lis = "".join(
+            f'<li><a href="{act_url(x)}"><b>{esc(ACTS[x]["short"])}</b></a> – issued {fmt_date(ACTS[x]["issued"])}, in force {fmt_date(ACTS[x]["effective"])}. '
+            f'{esc(ACTS[x]["subject"].replace("Amending FDL 47/2022", "Amends the Law"))}'
+            f' <a href="{act_url(x)}">Text</a> · <a href="{act_url(x, None, "arabic")}">Arabic</a></li>' for x in sorted(amenders, key=lambda x: ACTS[x]["issued"]))
+        amend = f'<h2>Amending laws</h2><p>These laws changed the text. Each page holds the full text of the amending law, with the Arabic original.</p><ul class="rel">{lis}</ul>'
     hist = ""
     if a.get("history") or a.get("amends") or a.get("repeals") or a.get("repealed_by"):
         ev = []
@@ -558,10 +686,12 @@ def render_versions_page(aid):
         hist = f'<h2>History</h2><ul class="hist">{"".join(lis)}</ul>'
     tbl = ""
     if rows:
-        tbl = f'<h2>Editions held in this database</h2><div class="scroll"><table class="grid"><thead><tr><th>Date</th><th>Edition</th><th>Status</th><th></th></tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
+        first = "Applies from" if law_log else "Date"
+        tbl = (f'<h2>Version log</h2><div class="scroll"><table class="grid"><thead><tr><th>{first}</th><th>Edition</th><th>Status</th><th></th></tr></thead>'
+               f'<tbody>{"".join(rows)}</tbody></table></div>')
     else:
         tbl = '<p>No edition of the text is held yet.</p>'
-    body = f'<article class="doc">{head}{tbl}{cmp}{hist}<p class="small">Earlier editions that are not yet loaded (for example the original 2022 text of the Law) will be added as they are located.</p></article>'
+    body = f'<article class="doc">{head}{tbl}{amend}{cmp}{hist}</article>'
     return page(a["short"] + " – versions", body, active=aid)
 
 
@@ -580,12 +710,14 @@ def render_related_page(aid):
         sections.append(("Repeals", [li(x) for x in a["repeals"]]))
     if a.get("amends"):
         sections.append(("Amends", [li(x) for x in a["amends"]]))
-    amended_by = [x["id"] for x in A.ACTS if aid in x.get("amends", [])]
+    amended_by = [x["id"] for x in A.ACTS if aid in x.get("amends", []) and x.get("nav", True)]
     if amended_by:
         sections.append(("Amended by", [li(x) for x in amended_by]))
+    if any(x.get("nav") is False and aid in x.get("amends", []) for x in A.ACTS):
+        sections.append(("Amended by", [f'<li>The amending laws are listed in the <a href="{act_url(aid, None, "versions")}">version log</a>.</li>']))
     if CITES.get(aid):
         sections.append(("Provisions of other acts cited in this act", [li(x) for x in sorted(CITES[aid])]))
-    cb = sorted(CITED_BY.get(aid, set()))
+    cb = sorted(x for x in CITED_BY.get(aid, set()) if not (ACTS[x].get("nav") is False and aid in ACTS[x].get("amends", [])))
     if cb:
         sections.append(("Acts that refer to provisions of this act", [li(x) for x in cb]))
     mentions = sorted(x for x in ACTREF_USE.get(aid, set()) if x not in CITES.get(aid, set()))
@@ -881,7 +1013,8 @@ def build_search():
                 for t, c in cnt.items():
                     postings[t][d_i] = c
     terms = {t: [x for k, v in sorted(p.items()) for x in (k, v)] for t, p in postings.items()}
-    return dict(acts=acts_meta, docs=docs, terms=terms, topics=A.TOPICS, groups=A.GROUPS, stop=STOP)
+    eds = {aid: {e["id"]: e["short"] for e in ACTS[aid]["editions"]} for aid in ORDER if len(ACTS[aid]["editions"]) > 1}
+    return dict(acts=acts_meta, docs=docs, terms=terms, topics=A.TOPICS, groups=A.GROUPS, stop=STOP, eds=eds)
 
 
 def render_search_page():
@@ -931,7 +1064,8 @@ def render_about():
 <ul class="rel"><li>English texts are taken from the publications of the Ministry of Finance (mof.gov.ae) and the Federal Tax Authority (tax.gov.ae). They are unofficial translations; the Arabic text prevails. The Arabic original of every act is available on its own tab.</li>
 <li>Where no official English text exists, a machine translation is shown and labelled as such.</li>
 <li>Issue and effective dates are taken from the text of each act, not from the dates shown in the portals' lists, which are often different.</li>
-<li>Editions: the current consolidated text opens by default. Archived editions can be read and compared (legal redline) from the Versions tab.</li>
+<li>Editions: the current consolidated text opens by default. Earlier editions of the Corporate Tax Law are listed in its version log, where they can be read and compared (legal redline). Next to each article that was amended, a faded link leads to the wording it had before.</li>
+<li>The current consolidated text of the Corporate Tax Law is copied from the UAE Legislation portal (uaelegislation.gov.ae). Earlier editions are reconstructed from it by undoing the amending laws; the replaced articles come from the original English text published by the Ministry of Finance in 2022, so terminology in those articles can differ from the rest of the text.</li>
 <li>Links between acts (for example from a Cabinet Decision to the article of the Law it implements) are generated automatically from the references in the text and should be checked.</li></ul>
 <h2>Limits</h2>
 <p>This site is not legal advice and is not affiliated with any authority. Always check the official publication before relying on a text. Tables are shown in simplified form.</p>

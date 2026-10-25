@@ -192,7 +192,8 @@
       var d = r.d, a = IDX.acts[d.a];
       var isAct = d.i === '' && d.n === '';
       var title = isAct ? a.short : (d.n + (d.h && d.n !== 'Preamble' ? ' – ' + d.h : ''));
-      var ed = !d.c ? ' <span class="chip arch">archived edition</span>' : '';
+      var edl = (IDX.eds && IDX.eds[a.id] && IDX.eds[a.id][d.e]) || '';
+      var ed = !d.c ? ' <span class="chip arch">archived edition' + (edl ? ': ' + esc(edl) : '') + '</span>' : '';
       var st = a.status === 'repealed' ? ' <span class="chip bad">repealed</span>' : '';
       var sub = isAct ? esc(a.title) : esc(a.short) + ' · ' + esc(a.subject);
       var body = isAct ? esc(d.x) : (r.q ? snippet(d, r.q) : esc((d.x || '').slice(0, 220)));
