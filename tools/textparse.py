@@ -381,6 +381,24 @@ class Parser:
                     while j < n and L[j].strip() and indent_of(L[j]) >= 10 and not marker_of(L[j].strip()) and len(tparts) < 3:
                         tparts.append(L[j].strip())
                         j += 1
+                    if not tparts:
+                        # a long title set flush left: one standalone line without a final stop, optionally wrapped onto short lines
+                        k = j
+                        while k < n and not L[k].strip() and k - j < 2:
+                            k += 1
+                        if k < n:
+                            def _title_line(x):
+                                return x and not x.endswith((".", ":", ";", ",")) and x[:1].isupper() and not marker_of(x) \
+                                    and not looks_article(x) and not RE_CHAPTER.match(x)
+                            def _ends_title(x):               # blank line or the first marker of the body follows
+                                return x >= n or not L[x].strip() or bool(marker_of(L[x].strip()))
+                            grp, q = [], k
+                            while q < n and L[q].strip() and len(grp) < 3 and len(L[q].strip()) <= 140 and (_title_line(L[q].strip()) or (grp and not L[q].strip().endswith(".") and not marker_of(L[q].strip()))):
+                                grp.append(L[q].strip())
+                                q += 1
+                            if grp and _ends_title(q) and (len(grp) == 1 or all(not g.endswith(".") for g in grp)):
+                                tparts = grp
+                                j = q
                     title = " ".join(tparts)
                     i = j - 1
                 elif m and indent_of(ln) < 6 and len(st) < 25:

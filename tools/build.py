@@ -73,11 +73,11 @@ def sorted_editions(a):
 
 # --------------------------------------------------------------------------- reference linking
 ACT_REF_RE = re.compile(
-    r"\b(?P<kind>Federal Decree-Law|Cabinet Decision)\s+No\.?\s*\(?(?P<no>\d+)\)?\s*(?:of|for)\s*(?:the\s+year\s+)?(?P<yr>\d{4})"
+    r"\b(?P<kind>Federal Decree-Law|Cabinet Decision|Ministerial Decision)\s+No\.?\s*\(?(?P<no>\d+)\)?\s*(?:of|for)\s*(?:the\s+year\s+)?(?P<yr>\d{4})"
 )
 BYREF = {}
 for _a in A.ACTS:
-    m = re.match(r"^(Federal Decree-Law|Cabinet Decision) No\. (\d+) of (\d{4})", _a["short"])
+    m = re.match(r"^(Federal Decree-Law|Cabinet Decision|Ministerial Decision) No\. (\d+) of (\d{4})", _a["short"])
     if m:
         BYREF[(m.group(1), int(m.group(2)), int(m.group(3)))] = _a["id"]
 
@@ -85,7 +85,7 @@ ART_RE = re.compile(r"\b(?P<w>Articles?)\s*\(?(?P<num>\d+(?:\.\d+)*)\)?(?P<bis>\
 TAIL_RE = re.compile(
     r"^(?:\s*,?\s*(?:(?:and|or)\s+)?(?:Clauses?|Paragraphs?|Sub-?clauses?|Items?|Subparagraphs?)\s*\(?[0-9A-Za-z]+\)?(?:\s*\(\s*[0-9A-Za-z]+\s*\))*)*"
     r"\s*(?:of|in|under)\s+(?:the\s+)?(?:aforementioned\s+)?(?P<this>this\s+)?"
-    r"(?P<who>(?:Federal Decree-Law|Cabinet Decision)\s+No\.?\s*\(?\d+\)?\s*(?:of|for)\s*\d{4}|Federal Decree-Law|Decree-Law|Executive Regulation|Decision|Regulation|Corporate Tax Law|Tax Procedures Law|Tax Law|Law)"
+    r"(?P<who>(?:Federal Decree-Law|Cabinet Decision|Ministerial Decision)\s+No\.?\s*\(?\d+\)?\s*(?:of|for)\s*\d{4}|Federal Decree-Law|Decree-Law|Executive Regulation|Decision|Regulation|Corporate Tax Law|Tax Procedures Law|Tax Law|Law)"
 )
 
 ARTS = {}  # act id -> {normalized num: (id, title)}
@@ -548,8 +548,8 @@ def tabs(aid, ed_id, active):
     items = []
     if cur:
         items.append(("text", "Text", act_url(aid, ed)))
-        ar = ed_by_id(a, ed).get("ar") if ed else None
-        items.append(("arabic", "Arabic original", act_url(aid, ed, "arabic")))
+        if not a.get("en_only"):
+            items.append(("arabic", "Arabic original", act_url(aid, ed, "arabic")))
     items.append(("versions", "Versions", act_url(aid, None, "versions")))
     items.append(("related", "Related acts", act_url(aid, None, "related")))
     lis = "".join(f'<li class="{"on" if k == active else ""}"><a href="{u}">{t}</a></li>' for k, t, u in items)
@@ -662,7 +662,8 @@ def render_text_page(aid, ed):
         src = '<p class="provenance">Source: machine translation prepared for this database from the Arabic original.</p>'
     ed_note = f'<p class="ednote">{esc(ed["note"])}</p>' if ed.get("note") else ""
     ed_note = edition_box(a, ed) + (derive_note(a, ed) if ed.get("derive") else "") + ed_note
-    disc = "" if ed.get("machine") else '<p class="disc">Unofficial English translation. The Arabic text prevails.</p>'
+    disc = "" if ed.get("machine") else ('<p class="disc">English text as published by the ' + esc(ed["publisher"]) + '. The Arabic text prevails.</p>' if a.get("en_only")
+                                         else '<p class="disc">Unofficial English translation. The Arabic text prevails.</p>')
     body = f'{intro}<article class="doc">{head}{ed_note}{disc}<div class="text">{h}</div>{src}</article>'
     return page(a["short"], body, active=aid, toc=toc, desc=a["title"],
                 canonical=None)
@@ -1122,7 +1123,7 @@ def render_pending_list():
         a = ACTS[aid]
         if a.get("pending"):
             rows.append(f'<li><b>{esc(a["short"])}</b> – {esc(a["pending"])}</li>')
-        if current_ed(a) and not current_ed(a).get("ar") and not a.get("pending"):
+        if current_ed(a) and not current_ed(a).get("ar") and not a.get("pending") and not a.get("en_only"):
             rows.append(f'<li><b>{esc(a["short"])}</b> – Arabic original not yet loaded.</li>')
         if current_ed(a) and current_ed(a).get("machine"):
             rows.append(f'<li><b>{esc(a["short"])}</b> – only a machine translation of the Arabic is available in English.</li>')
@@ -1188,7 +1189,8 @@ def main():
                       '<!doctype html><meta charset="utf-8"><title>Redirect</title><link rel="canonical" href="https://corp.uaetax.app/"><meta http-equiv="refresh" content="0; url=/"><a href="/">Federal Decree-Law No. 47 of 2022</a>')
             else:
                 write(base + "index.html", html_)
-            write(base + "arabic/index.html", render_arabic_page(aid, ed))
+            if not a.get("en_only"):
+                write(base + "arabic/index.html", render_arabic_page(aid, ed))
         write(f"/acts/{a['slug']}/versions/index.html", render_versions_page(aid))
         write(f"/acts/{a['slug']}/related/index.html", render_related_page(aid))
         eds = sorted_editions(a)

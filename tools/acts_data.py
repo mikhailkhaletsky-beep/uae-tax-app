@@ -53,6 +53,9 @@ TOPICS = [
     "Penalties and procedures",
     "Top-up Tax (Pillar Two)",
     "Tax credits and incentives",
+    "Taxable income and deductions",
+    "Reliefs, groups and restructuring",
+    "Accounting, audit and records",
 ]
 
 
@@ -387,5 +390,8 @@ NAMES = {
     "CD-16": "R&D tax credit",
     "CD-17": "Sports entities exemption",
 }
+import acts_mof as _mof
+
+ACTS.extend(_mof.build())
 for _a in ACTS:
-    _a["name"] = NAMES.get(_a["id"], _a["subject"])
+    _a.setdefault("name", NAMES.get(_a["id"], _a["subject"]))
