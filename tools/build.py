@@ -440,7 +440,7 @@ def page(title, body, active=None, desc="", extra_head="", body_class="", toc=No
 {sid}
 <main class="main" id="main">
 {body}
-<footer class="foot"><p>Unofficial database. English texts are unofficial translations published by the UAE Ministry of Finance and the Federal Tax Authority; the Arabic text prevails. This site is not legal advice. Last updated {UPDATED}.</p></footer>
+<footer class="foot"><p>Unofficial database. English texts are unofficial translations published by the UAE Ministry of Finance, the Federal Tax Authority and the UAE Legislation portal, or machine translations where marked; the Arabic text prevails. This site is not legal advice. Last updated {UPDATED}.</p></footer>
 </main>
 {toc_html}
 </div>
@@ -611,7 +611,7 @@ def render_arabic_page(aid, ed):
     head = act_header(aid, ed["id"] if ed["id"] != cur["id"] else None, "arabic")
     key = ed.get("ar")
     if not key and ed.get("derive"):
-        lis = "".join(f'<li><a href="{act_url(x, None, "arabic")}"><b>{esc(law_label(x))}</b></a> – Arabic original of the amending law</li>' for x in ed.get("amended_by", []))
+        lis = "".join(f'<li><a href="{act_url(x, None, "arabic")}"><b>{esc(law_label(x))}</b></a> – Arabic original of the amending law</li>' for x in (ed.get("amended_by") or current_ed(a).get("amended_by", [])))
         lis += f'<li><a href="{act_url(aid, None, "arabic")}"><b>Current consolidated text</b></a> – Arabic, Ministry of Finance (13 January 2026)</li>'
         body = (f'<article class="doc">{head}<div class="banner warn"><b>No separate Arabic text for this archived edition.</b> '
                 f'The edition is reconstructed from the English text, so there is no Arabic file of exactly this wording. '
