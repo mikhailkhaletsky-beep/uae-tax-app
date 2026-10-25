@@ -6,12 +6,41 @@ Maintenance notes
   * Dates are ISO (YYYY-MM-DD). Dates were taken from the document text (headers / signature blocks),
     not from the portals' "issue date" columns, which are unreliable.
 """
+import re
 
+# Sidebar / "Related acts" sections.  Acts of group "fta" also carry `sub` (one of FTA_SUBS).
 GROUPS = [
     ("law", "Corporate Tax Law"),
     ("cabinet", "Cabinet Decisions"),
+    ("ministerial", "Ministerial Decisions"),
+    ("fta", "Federal Tax Authority"),
     ("related", "Related: Tax Procedures"),
 ]
+FTA_SUBS = [
+    ("decision", "FTA Decisions"),
+    ("guide", "FTA Guides"),
+    ("clarification", "FTA Public Clarifications"),
+]
+
+# Filter types of the search page (the FTA group is split by document type).
+TYPES = [
+    ("law", "Corporate Tax Law"),
+    ("cabinet", "Cabinet Decisions"),
+    ("ministerial", "Ministerial Decisions"),
+    ("fta-decision", "FTA Decisions"),
+    ("fta-guide", "FTA Guides"),
+    ("fta-clarification", "FTA Public Clarifications"),
+    ("related", "Related: Tax Procedures"),
+]
+
+
+def type_of(a):
+    return "fta-" + a["sub"] if a["group"] == "fta" else a["group"]
+
+
+def type_label(a):
+    return dict(TYPES)[type_of(a)]
+
 
 TOPICS = [
     "Core law",
@@ -26,12 +55,36 @@ TOPICS = [
     "Tax credits and incentives",
 ]
 
+
+# Editorial terminology rules for the text of Federal Decree-Law No. 47 of 2022 (applied when a text is loaded; the source
+# files stay untouched).  Each rule is (regex, replacement); the first group of rules unifies wording, the second makes
+# every use of a defined term of Article 1 match its definition.  Rules are listed on the "About" page.
+DEFINED_TERMS = [
+    "Withholding Tax Credit", "Withholding Tax", "Corporate Tax Payable", "Corporate Tax", "Foreign Tax Credit",
+    "Non-Resident Person", "Resident Person", "Permanent Establishment", "Qualifying Mutual Fund",
+    "Administrative Fines", "Multinational Enterprise",
+]
+NORMALIZE_LAW = [
+    (r"(?i)\bsupplementary tax\b", "Top-up Tax"),
+    (r"(?i)\btop-up tax\b", "Top-up Tax"),
+    (r"\bDecree by Law\b", "Decree-Law"),
+    (r"\bAdministrative Penalties\b", "Administrative Fines"),
+    (r"\bresolution to be resolution issued\b", "decision to be issued"),      # slip in the source of Article 3(1)
+    (r"\bresolution to be issued\b", "decision to be issued"),
+    (r"\bCabinet Decision\b", "Cabinet decision"),
+    (r"\b(R|r)esolutions\b", lambda m: ("D" if m.group(1) == "R" else "d") + "ecisions"),
+    (r"\b(R|r)esolution\b", lambda m: ("D" if m.group(1) == "R" else "d") + "ecision"),
+] + [
+    (r"(?i)\b" + re.escape(t).replace(r"\ ", r"[ ]").replace(r"\-", "-") + r"(s?)\b", (lambda t: lambda m: t + m.group(1))(t))
+    for t in DEFINED_TERMS
+]
+
 FDL47 = "Federal Decree-Law No. 47 of 2022 on the Taxation of Corporations and Businesses"
 
 ACTS = [
     # ------------------------------------------------------------------ LAW
     dict(
-        id="L-01", slug="fdl-47-2022", group="law", short="Federal Decree-Law No. 47 of 2022",
+        id="L-01", slug="fdl-47-2022", group="law", normalize=NORMALIZE_LAW, short="Federal Decree-Law No. 47 of 2022",
         subject="Taxation of Corporations and Businesses",
         title=FDL47, topics=["Core law"],
         status="in_force", status_label="In force (as amended)",
@@ -60,7 +113,7 @@ ACTS = [
                  short="Original text (2022)", date="2022-10-25",
                  applies="25 October 2022 (15 days after publication in the Official Gazette on 10 October 2022)", until="1 November 2023 by FDL 60/2023",
                  publisher="UAE Legislation portal",
-                 derive=dict(base="2023-11", ops=[("defs_remove", "1", ["Supplementary Tax", "Multinational Enterprise"]),
+                 derive=dict(base="2023-11", ops=[("defs_remove", "1", ["Top-up Tax", "Multinational Enterprise"]),
                                                    ("clause_remove", "3", "3."), ("replace", "65")]),
                  amended_by=[], law=None),
         ],
@@ -311,3 +364,28 @@ WATCH = [
     dict(id="R-04", short="Expected Cabinet Decision under Article 49 bis", title="Cabinet Decision on conditions, timeframes and procedures for claiming payment of unutilised tax credits",
          note="Required by Article 49 bis of Federal Decree-Law No. 47 of 2022. Not yet published as of 25 Oct 2026. Not in the pilot scope."),
 ]
+
+
+# Short descriptive names shown in the sidebar (the full title stays on the act's own page).
+NAMES = {
+    "L-01": "Corporate Tax Law",
+    "CD-01": "Rate bands: 0% up to AED 375,000",
+    "CD-02": "Tax residency",
+    "CD-03": "Qualifying Public Benefit Entities",
+    "CD-04": "Natural persons: business income over AED 1m",
+    "CD-05": "Free Zone Qualifying Income",
+    "CD-06": "Non-Resident Person's nexus",
+    "CD-07": "Administrative penalties",
+    "CD-08": "Qualifying Investment Funds",
+    "CD-09": "Free Zone Persons: Qualifying Activities and Income",
+    "CD-10": "Penalty schedule amended",
+    "CD-11": "Top-up Tax on multinationals (Pillar Two)",
+    "CD-12": "Investment Funds and Limited Partnerships",
+    "CD-13": "Non-Resident Person's nexus",
+    "CD-14": "Foreign entities wholly owned by Exempt Persons",
+    "CD-15": "Unincorporated partnerships as Taxable Persons",
+    "CD-16": "R&D tax credit",
+    "CD-17": "Sports entities exemption",
+}
+for _a in ACTS:
+    _a["name"] = NAMES.get(_a["id"], _a["subject"])

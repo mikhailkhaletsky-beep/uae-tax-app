@@ -21,6 +21,17 @@
   $$('[data-edswitch]').forEach(function (s) {
     s.addEventListener('change', function () { location.href = s.value; });
   });
+  /* sidebar sections open and close on click; the choice is remembered, the section of the page being read stays open */
+  var SKEY = 'uaect.side', saved = {};
+  try { saved = JSON.parse(localStorage.getItem(SKEY) || '{}') || {}; } catch (e) { saved = {}; }
+  $$('.side details[data-sec]').forEach(function (d) {
+    var k = d.getAttribute('data-sec');
+    if (k in saved && !d.querySelector('li.active')) d.open = !!saved[k];
+    d.addEventListener('toggle', function () {
+      saved[k] = d.open;
+      try { localStorage.setItem(SKEY, JSON.stringify(saved)); } catch (e) {}
+    });
+  });
   var active = $('.side li.active');
   if (active && active.scrollIntoView) { try { active.scrollIntoView({ block: 'center' }); } catch (e) {} }
 

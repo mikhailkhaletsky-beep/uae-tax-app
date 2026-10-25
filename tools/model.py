@@ -180,12 +180,37 @@ def block_plain(b):
     return ""
 
 
+def _norm_str(text, rules):
+    for pat, rep in rules:
+        text = re.sub(pat, rep, text)
+    return text
+
+
+def normalize_blocks(blocks, rules):
+    """Editorial terminology rules (see acts_data.NORMALIZE_LAW) applied to every text field of the parsed blocks."""
+    for b in blocks:
+        if "text" in b:
+            b["text"] = _norm_str(b["text"], rules)
+        if "title" in b and isinstance(b["title"], str):
+            b["title"] = _norm_str(b["title"], rules)
+        if b.get("kind") == "defs":
+            b["rows"] = [tuple(_norm_str(c, rules) if isinstance(c, str) else c for c in r) for r in b["rows"]]
+        if b.get("kind") == "etable":
+            continue
+
+
 def load_edition(act, ed):
     path = edition_text_path(ed)
     blocks, notes = T.parse_file(path, want_notes=True)
     blocks = T.upgrade_tables(blocks)
     attached, leftover = attach_notes(blocks, notes)
     pre, sections = structure(blocks)
+    rules = act.get("normalize")
+    if rules:
+        normalize_blocks(pre, rules)
+        for sct in sections:
+            normalize_blocks([sct], rules)
+            normalize_blocks(sct.get("blocks", []), rules)
     if ed.get("tables_only"):
         tabs = [b for s in sections if s["type"] == "article" for b in s["blocks"] if b["kind"] == "etable"]
         pre = []

@@ -21,7 +21,7 @@ OUT = os.path.join(ROOT, "public")
 SITE_NAME = "UAE CT Database"
 SITE_URL = "https://corp.uaetax.app"
 SITEMAP = []
-UPDATED = "25 October 2026"
+UPDATED = "26 October 2026"
 HOME_ACT = "L-01"
 
 esc = html.escape
@@ -353,20 +353,74 @@ for aid in ORDER:
         RENDER[(aid, ed["id"])] = (h, toc)
 
 
+def num_label(a):
+    """Short act number for the sidebar: "FDL 47/2022", "CD 116/2022", "MD 134/2023" ..."""
+    if a.get("numlabel"):
+        return a["numlabel"]
+    t = a["short"]
+    for long, short in (("Federal Decree-Law No.", "FDL"), ("Cabinet Decision No.", "CD"), ("Ministerial Decision No.", "MD"),
+                        ("FTA Decision No.", "FTA Decision")):
+        if t.startswith(long):
+            return re.sub(r" of (\d{4})", r"/\1", short + t[len(long):])
+    return t
+
+
+def entry_href(a):
+    return "/acts/" + a["slug"] + "/" if a.get("pending") else act_url(a["id"])
+
+
+# "Related acts" widget under the title of an article: acts that cite the article, grouped like the sidebar.
+REL_ORDER = [("cabinet", "Cabinet Decisions"), ("ministerial", "Ministerial Decisions"), ("fta", "FTA acts"), ("other", "Other acts")]
+
+
 def backrefs_html(aid, art_id):
     items = BACK.get(aid, {}).get(art_id)
     if not items:
         return ""
-    seen, lis = set(), []
+    seen, by = set(), defaultdict(list)
     for src, sid, label in items:
         if (src, sid) in seen:
             continue
         seen.add((src, sid))
-        lis.append(f'<li><a href="{act_url(src)}#{sid}"><b>{esc(ACTS[src]["short"])}</b></a> – {esc(label)}</li>')
-    n = len(lis)
+        s = ACTS[src]
+        g = s["group"] if s["group"] in ("cabinet", "ministerial", "fta") else "other"
+        by[(g, s.get("sub") if g == "fta" else None)].append((src, sid, label))
+
+    def lis(rows):
+        """One entry per citing act, with its provisions listed below it."""
+        per = defaultdict(list)
+        for src, sid, label in rows:
+            per[src].append((sid, label))
+        out = []
+        for src in sorted(per, key=ORDER.index):
+            s = ACTS[src]
+            rep = ' <span class="tag tag-rep">repealed</span>' if s["status"] == "repealed" else ""
+            prov = "".join(f'<li><a href="{act_url(src)}#{sid}">{esc(label)}</a></li>' for sid, label in per[src])
+            out.append(f'<li><a class="ra-act" href="{act_url(src)}"><span class="ra-n">{esc(s["name"])}</span>{rep} <span class="ra-no">{esc(num_label(s))}</span></a>'
+                       f'<ul class="ra-p">{prov}</ul></li>')
+        return "<ul>" + "".join(out) + "</ul>"
+
+    def folder(title, inner, n, cls="ra-g"):
+        return f'<details class="{cls}"><summary>{esc(title)} <span class="n">{n}</span></summary>{inner}</details>'
+
+    groups = []
+    for g, gname in REL_ORDER:
+        if g == "fta":
+            subs = []
+            for sub, sname in A.FTA_SUBS:
+                rows = by.get(("fta", sub))
+                if rows:
+                    subs.append(folder(sname, lis(rows), len({r[0] for r in rows}), "ra-g ra-g2"))
+            if subs:
+                n = len({r[0] for (gg, _), rows in by.items() if gg == "fta" for r in rows})
+                groups.append(folder(gname, "".join(subs), n))
+        else:
+            rows = by.get((g, None))
+            if rows:
+                groups.append(folder(gname, lis(rows), len({r[0] for r in rows})))
     nacts = len({s for s, _, _ in items})
-    return (f'<details class="backrefs"><summary>Referred to in {n} provision{"s" if n != 1 else ""} of {nacts} act{"s" if nacts != 1 else ""}</summary>'
-            f'<ul>{"".join(lis)}</ul></details>')
+    return (f'<details class="relacts"><summary>Related acts <span class="n">{nacts}</span></summary>'
+            f'<div class="ra-body">{"".join(groups)}</div></details>')
 
 
 def fill_backrefs(h):
@@ -374,6 +428,27 @@ def fill_backrefs(h):
 
 
 # --------------------------------------------------------------------------- page shell
+def _li(aid, active, new_style=True):
+    a = ACTS[aid]
+    cls = []
+    if a["status"] == "repealed":
+        cls.append("repealed")
+    if a.get("pending"):
+        cls.append("pending")
+    if aid == active:
+        cls.append("active")
+    tag = ""
+    if a["status"] == "repealed":
+        tag = ' <span class="tag tag-rep">repealed</span>'
+    elif a.get("pending"):
+        tag = ' <span class="tag tag-pend">text pending</span>'
+    if new_style:
+        inner = f'<span class="nm">{esc(a["name"])}{tag}</span><span class="no">{esc(num_label(a))}</span>'
+    else:                                         # "Related: Tax Procedures" keeps the original two-line entry
+        inner = f'<span class="s1">{esc(num_label(a))}{tag}</span><span class="s2">{esc(a["subject"])}</span>'
+    return f'<li class="{" ".join(cls)}"><a href="{entry_href(a)}">{inner}</a></li>'
+
+
 def sidebar_html(active=None):
     if active and ACTS[active].get("nav") is False:           # an amending law: highlight the law it amends
         active = ACTS[active]["amends"][0]
@@ -383,27 +458,25 @@ def sidebar_html(active=None):
         items = [aid for aid in ORDER if ACTS[aid]["group"] == gid and ACTS[aid].get("nav", True)]
         if not items:
             continue
-        out.append(f'<h4>{esc(gname)}</h4><ul>')
-        for aid in items:
-            a = ACTS[aid]
-            cls = []
-            if a["status"] == "repealed":
-                cls.append("repealed")
-            if a.get("pending"):
-                cls.append("pending")
-            if aid == active:
-                cls.append("active")
-            tag = ""
-            if a["status"] == "repealed":
-                tag = '<span class="tag tag-rep">repealed</span>'
-            elif a.get("pending"):
-                tag = '<span class="tag tag-pend">text pending</span>'
-            out.append(
-                f'<li class="{" ".join(cls)}"><a href="{act_url(aid) if not a.get("pending") else "/acts/" + a["slug"] + "/"}">'
-                f'<span class="s1">{esc(a["short"].replace("Federal Decree-Law No.", "FDL").replace("Cabinet Decision No.", "CD").replace(" of ", "/"))} {tag}</span>'
-                f'<span class="s2">{esc(a["subject"])}</span></a></li>'
-            )
-        out.append("</ul>")
+        if gid in ("law", "related"):                          # plain sections: always visible
+            style = gid == "law"
+            out.append(f'<section class="sec sec-{gid}"><h4>{esc(gname)}</h4><ul>{"".join(_li(x, active, style) for x in items)}</ul></section>')
+            continue
+        has_active = active in items
+        if gid == "fta":
+            subs = []
+            for sub, sname in A.FTA_SUBS:
+                si = [x for x in items if ACTS[x].get("sub") == sub]
+                if not si:
+                    continue
+                op = " open" if active in si else ""
+                subs.append(f'<details class="sub" data-sec="fta-{sub}"{op}><summary><span class="t">{esc(sname)}</span><span class="n">{len(si)}</span></summary>'
+                            f'<ul>{"".join(_li(x, active) for x in si)}</ul></details>')
+            body = "".join(subs)
+        else:
+            body = f'<ul>{"".join(_li(x, active) for x in items)}</ul>'
+        op = " open" if has_active else ""
+        out.append(f'<details class="sec sec-{gid}" data-sec="{gid}"{op}><summary><span class="t">{esc(gname)}</span><span class="n">{len(items)}</span></summary>{body}</details>')
     out.append('<div class="side-bot"><a href="/pending/">Texts not yet loaded</a><a href="/about/">About this database</a></div></nav>')
     return "".join(out)
 
@@ -484,7 +557,7 @@ def tabs(aid, ed_id, active):
 
 
 def meta_block(a):
-    rows = [("Type", dict(A.GROUPS)[a["group"]]), ("Issued", fmt_date(a["issued"])), ("In effect", fmt_date(a["effective"]))]
+    rows = [("Type", A.type_label(a)), ("Issued", fmt_date(a["issued"])), ("In effect", fmt_date(a["effective"]))]
     rows.append(("Topics", ", ".join(a["topics"])))
     cells = "".join(f'<div><dt>{k}</dt><dd>{esc(v)}</dd></div>' for k, v in rows if v)
     return f'<dl class="meta">{cells}</dl>'
@@ -516,7 +589,7 @@ def act_header(aid, ed_id, active_tab):
     if cur:
         ed = ed_by_id(a, ed_id or cur["id"])
         ed_line = f'<p class="edline">{esc(ed["label"])}</p>'
-    return (f'<div class="act-head"><p class="crumb"><a href="/search/">All acts</a> / {esc(dict(A.GROUPS)[a["group"]])}</p>'
+    return (f'<div class="act-head"><p class="crumb"><a href="/search/">All acts</a> / {esc(A.type_label(a))}</p>'
             f'<h1>{esc(a["short"])}</h1><p class="sub">{esc(a["title"])}</p>'
             f'<div class="chips">{status_chip(a)}{switch}</div>{ed_line}{"".join(banners)}{meta_block(a)}{tabs(aid, ed_id, active_tab)}</div>')
 
@@ -535,6 +608,10 @@ def edition_box(a, ed):
         rows += f'<p class="edbox-r"><b>Superseded:</b> {esc(ed["until"])}</p>'
     elif ed.get("current"):
         rows += '<p class="edbox-r"><b>Status:</b> current edition</p>'
+    if a.get("normalize"):
+        rows += ('<p class="edbox-r small"><b>Editorial note:</b> terminology is unified across the text of every edition '
+                 '(for example “Top-up Tax” throughout, “decision” for “resolution”, defined terms capitalised). '
+                 '<a href="/about/#terminology">What was changed</a>.</p>')
     return f'<div class="edbox">{head}{rows}</div>'
 
 
@@ -558,7 +635,7 @@ def derive_note(a, ed):
     return (f'<p class="ednote"><b>Reconstructed edition.</b> This text was rebuilt for this database from the next later edition by undoing '
             f'{esc(law_label(base["law"]))}: ' + "; ".join(esc(x) for x in parts) +
             f'. Replaced articles are taken from the original English text published by the Ministry of Finance in 2022{link}, '
-            f'so their wording and terminology can differ slightly from the surrounding articles. The Arabic text prevails.</p>')
+            f'so their wording can differ slightly from the surrounding articles. The Arabic text prevails.</p>')
 
 
 def render_text_page(aid, ed):
@@ -571,7 +648,7 @@ def render_text_page(aid, ed):
     if aid == HOME_ACT and ed["id"] == cur["id"]:
         intro = ('<div class="hero"><p>Full texts of UAE corporate tax legislation with search, editions and cross-references. '
                  'The page below is the current consolidated text of the Corporate Tax Law. Use the contents list to jump to an article; '
-                 'the box under each article shows the Cabinet Decisions that refer to it.</p></div>')
+                 'the “Related acts” button under an article opens the acts that refer to it.</p></div>')
     src_url = URLS.get(ed["src"]) if not ed.get("manual") and not ed.get("derive") else None
     src = ""
     if ed.get("derive"):
@@ -600,7 +677,7 @@ def render_pending_page(aid):
 
 def act_header_pending(aid):
     a = ACTS[aid]
-    return (f'<div class="act-head"><p class="crumb"><a href="/search/">All acts</a> / {esc(dict(A.GROUPS)[a["group"]])}</p>'
+    return (f'<div class="act-head"><p class="crumb"><a href="/search/">All acts</a> / {esc(A.type_label(a))}</p>'
             f'<h1>{esc(a["short"])}</h1><p class="sub">{esc(a["title"])}</p><div class="chips">{status_chip(a)}</div>{meta_block(a)}'
             f'<ul class="tabs"><li class="on"><a href="/acts/{a["slug"]}/">Status</a></li></ul></div>')
 
@@ -980,7 +1057,7 @@ def build_search():
     for aid in ORDER:
         a = ACTS[aid]
         aidx[aid] = len(acts_meta)
-        acts_meta.append(dict(id=aid, slug=a["slug"], short=a["short"], subject=a["subject"], group=a["group"],
+        acts_meta.append(dict(id=aid, slug=a["slug"], short=a["short"], subject=a["subject"], group=A.type_of(a),
                               status=a["status"], topics=[A.TOPICS.index(t) for t in a["topics"]], title=a["title"]))
     for aid in ORDER:
         a = ACTS[aid]
@@ -1014,12 +1091,12 @@ def build_search():
                     postings[t][d_i] = c
     terms = {t: [x for k, v in sorted(p.items()) for x in (k, v)] for t, p in postings.items()}
     eds = {aid: {e["id"]: e["short"] for e in ACTS[aid]["editions"]} for aid in ORDER if len(ACTS[aid]["editions"]) > 1}
-    return dict(acts=acts_meta, docs=docs, terms=terms, topics=A.TOPICS, groups=A.GROUPS, stop=STOP, eds=eds)
+    return dict(acts=acts_meta, docs=docs, terms=terms, topics=A.TOPICS, groups=A.TYPES, stop=STOP, eds=eds)
 
 
 def render_search_page():
     topics = "".join(f'<label><input type="checkbox" name="tp" value="{i}"> {esc(t)}</label>' for i, t in enumerate(A.TOPICS))
-    groups = "".join(f'<label><input type="checkbox" name="gr" value="{g}"> {esc(n)}</label>' for g, n in A.GROUPS)
+    groups = "".join(f'<label><input type="checkbox" name="gr" value="{g}"> {esc(n)}</label>' for g, n in A.TYPES)
     body = f"""<article class="doc searchpage">
 <h1>Search and filter</h1>
 <form id="sf" class="sfilters" onsubmit="return false">
@@ -1065,7 +1142,8 @@ def render_about():
 <li>Where no official English text exists, a machine translation is shown and labelled as such.</li>
 <li>Issue and effective dates are taken from the text of each act, not from the dates shown in the portals' lists, which are often different.</li>
 <li>Editions: the current consolidated text opens by default. Earlier editions of the Corporate Tax Law are listed in its version log, where they can be read and compared (legal redline). Next to each article that was amended, a faded link leads to the wording it had before.</li>
-<li>The current consolidated text of the Corporate Tax Law is copied from the UAE Legislation portal (uaelegislation.gov.ae). Earlier editions are reconstructed from it by undoing the amending laws; the replaced articles come from the original English text published by the Ministry of Finance in 2022, so terminology in those articles can differ from the rest of the text.</li>
+<li>The current consolidated text of the Corporate Tax Law is copied from the UAE Legislation portal (uaelegislation.gov.ae). Earlier editions are reconstructed from it by undoing the amending laws; the replaced articles come from the original English text published by the Ministry of Finance in 2022, so their wording can differ slightly from the rest of the text.</li>
+<li id="terminology">Terminology of the Corporate Tax Law is unified in every edition: the three variants “Supplementary Tax”, “Top-Up Tax” and “top-up tax” became “Top-up Tax”; “Decree by Law” became “Decree-Law”; “resolution” became “decision” (as in “decision issued by the Cabinet”); the term “Administrative Penalties” of the 2022 text became “Administrative Fines”; and wherever the text uses a term defined in Article 1 (Corporate Tax, Withholding Tax, Withholding Tax Credit, Foreign Tax Credit, Resident Person, Non-Resident Person, Permanent Establishment, Qualifying Mutual Fund, Multinational Enterprise, Administrative Fines) it is capitalised as in the definition. Nothing else in the wording was changed. The amending laws are shown as published.</li>
 <li>Links between acts (for example from a Cabinet Decision to the article of the Law it implements) are generated automatically from the references in the text and should be checked.</li></ul>
 <h2>Limits</h2>
 <p>This site is not legal advice and is not affiliated with any authority. Always check the official publication before relying on a text. Tables are shown in simplified form.</p>
