@@ -76,7 +76,7 @@ def sorted_editions(a):
 
 # --------------------------------------------------------------------------- reference linking
 ACT_REF_RE = re.compile(
-    r"\b(?P<kind>Federal Decree-Law|Federal Decree Law|Cabinet Decision|Ministerial Decision|Federal Tax Authority Decision|FTA Decision|Decision of the Federal Tax Authority)\s+No\.?\s*\(?(?P<no>\d+)\)?\s*(?:of|for)\s*(?:the\s+year\s+)?(?P<yr>\d{4})"
+    r"\b(?P<kind>Federal Decree-Law|Federal Decree Law|Cabinet Decision|Ministerial Decision|Federal Tax Authority Decision|FTA Decision|Decision of the Federal Tax Authority)\s+No\s*\.?\s*\(?(?P<no>\d+)\)?\s*(?:of|for)\s*(?:the\s+year\s+)?(?P<yr>\d{4})"
 )
 KIND_NORM = {"Federal Decree Law": "Federal Decree-Law", "Federal Tax Authority Decision": "FTA Decision",
              "Decision of the Federal Tax Authority": "FTA Decision"}
@@ -99,10 +99,30 @@ CODE_RE = re.compile(r"\b(" + "|".join(sorted((re.escape(c) for c in BYCODE), ke
 ART_RE = re.compile(r"\b(?P<w>Articles?)\s*\(?(?P<num>\d+(?:\.\d+)*)\)?(?P<bis>\s*\(?bis\)?)?(?P<more>(?:\s*(?:,|and|or)\s*\(\d+\)|\s*(?:,|and|or)\s*\d+(?![\d.]))*)")
 TAIL_RE = re.compile(
     r"^(?:\s*\(\s*[0-9A-Za-z]{1,4}\s*\))*(?:\s*,?\s*(?:(?:and|or)\s+)?(?:Clauses?|Paragraphs?|Sub-?clauses?|Items?|Subparagraphs?)\s*\(?[0-9A-Za-z]+\)?(?:\s*\(\s*[0-9A-Za-z]+\s*\))*)*"
-    r"\s*(?:of|in|under)\s+(?:the\s+)?(?:aforementioned\s+)?(?P<this>this\s+)?"
-    r"(?P<who>(?:Federal Decree-Law|Federal Decree Law|Cabinet Decision|Ministerial Decision|Federal Tax Authority Decision|FTA Decision)\s+No\.?\s*\(?\d+\)?\s*(?:of|for)\s*\d{4}|Federal Decree-Law|Decree-Law|Executive Regulation|Decision|Regulation|Corporate Tax Law|Tax Procedures Law|Tax Law|Law)"
+    r"(?:\s*(?:of|in|under)\s+|\s+(?=(?:Federal Decree-Law|Cabinet Decision|Ministerial Decision|FTA Decision)\s+No))(?:the\s+)?(?:aforementioned\s+)?(?P<this>this\s+)?"
+    r"(?P<who>(?:Federal Decree-Law|Federal Decree Law|Cabinet Decision|Ministerial Decision|Federal Tax Authority Decision|FTA Decision)\s+No\s*\.?\s*\(?\d+\)?\s*(?:of|for)\s*\d{4}|Federal Decree-Law|Decree-Law|Executive Regulation|Decision|Regulation|Corporate Tax Law|Tax Procedures Law|Tax Law|Law)"
 )
 SEC_RE = re.compile(r"\b(?P<w>Sections?|sections?|Chapters?|chapters?)\s+(?P<num>\d+(?:\.\d+)*)\.?(?=(?:\s*(?:,|and|or|to)\s*\d)|[\s,;:)]|$)")
+
+_NEXT_ART = re.compile(r"^(?:\s*\(\s*[0-9A-Za-z]{1,4}\s*\))*\s*(?:,|;|and|or)\s*(?:and\s+|or\s+)?(?=Articles?\b)")
+
+
+def cascade_tail(text, pos):
+    """An article without its own "of <act>" followed by further articles ("Article 18(1)(d) and Article 34 of the Corporate Tax Law"):
+    the first act named after the list applies to every article of the list."""
+    for _ in range(15):
+        mn = _NEXT_ART.match(text[pos: pos + 60])
+        if not mn:
+            return None
+        ma = ART_RE.match(text, pos + mn.end())
+        if not ma:
+            return None
+        pos = ma.end()
+        mt = TAIL_RE.match(text[pos: pos + 150])
+        if mt:
+            return mt
+    return None
+
 
 ARTS = {}  # act id -> {normalized num: (id, title)}
 for (aid, eid), d in DOCS.items():
@@ -190,6 +210,8 @@ def link_text(text, aid, ctx_art=None, collect=False, page_ed=None):
         num = num.lower()
         tail = text[m.end(): m.end() + 150]
         mt = TAIL_RE.match(tail)
+        if not mt:                                         # "Article 18(1)(d) and Article 34 of the Corporate Tax Law": one source for the list
+            mt = cascade_tail(text, m.end())
         target = None
         if not mt and alias_tail_re(aid):
             ma = alias_tail_re(aid).match(tail)
@@ -583,6 +605,10 @@ def backrefs_html(aid, art_id):
             s = ACTS[src]
             rep = ' <span class="tag tag-rep">repealed</span>' if s["status"] == "repealed" else ""
             prov = "".join(f'<li><a href="{act_url(src)}#{sid}">{esc(label)}</a></li>' for sid, label in per[src])
+            if s.get("sub") == "private":     # a compilation of Private Clarifications: only its topics are linked, never its first page
+                out.append(f'<li><span class="ra-act ra-plain"><span class="ra-n">{esc(s["name"])}</span>{rep} <span class="ra-no">{esc(num_label(s))}</span></span>'
+                           f'<ul class="ra-p">{prov}</ul></li>')
+                continue
             out.append(f'<li><a class="ra-act" href="{act_url(src)}"><span class="ra-n">{esc(s["name"])}</span>{rep} <span class="ra-no">{esc(num_label(s))}</span></a>'
                        f'<ul class="ra-p">{prov}</ul></li>')
         return "<ul>" + "".join(out) + "</ul>"

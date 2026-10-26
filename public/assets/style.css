@@ -171,6 +171,8 @@ sup.fn a{text-decoration:none;padding:0 1px}
 .ra-g li a.ra-act:hover .ra-n{text-decoration:underline}
 .ra-g li a.ra-act{color:var(--ink)}
 .ra-n{font-weight:650;color:var(--link)}
+.ra-plain .ra-n{color:var(--ink)}
+.ra-plain{display:block}
 .ra-no{color:var(--muted);font-size:12px;margin-left:6px}
 .ra-g ul.ra-p{margin:2px 0 0;padding:0 0 0 2px}
 .ra-g ul.ra-p li{padding:1px 0;border:0;font-size:12.5px}
