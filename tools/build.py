@@ -604,7 +604,11 @@ def backrefs_html(aid, art_id):
         for src in sorted(per, key=lambda x: (ACTS[x]["status"] == "repealed", ORDER.index(x))):
             s = ACTS[src]
             rep = ' <span class="tag tag-rep">repealed</span>' if s["status"] == "repealed" else ""
-            prov = "".join(f'<li><a href="{act_url(src)}#{sid}">{esc(label)}</a></li>' for sid, label in per[src])
+            rows_p = per[src]
+            if s.get("sub") == "private" and ACTS[aid]["group"] == "law":
+                # under an article of the Law a compilation of Private Clarifications gets one link: the first topic that concerns the article
+                rows_p = sorted(rows_p, key=lambda r: int(re.sub(r"\D", "", r[0]) or 0))[:1]
+            prov = "".join(f'<li><a href="{act_url(src)}#{sid}">{esc(label)}</a></li>' for sid, label in rows_p)
             if s.get("sub") == "private":     # a compilation of Private Clarifications: only its topics are linked, never its first page
                 out.append(f'<li><span class="ra-act ra-plain"><span class="ra-n">{esc(s["name"])}</span>{rep} <span class="ra-no">{esc(num_label(s))}</span></span>'
                            f'<ul class="ra-p">{prov}</ul></li>')

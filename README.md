@@ -21,7 +21,8 @@ Static website: no server, no database, no build step on the host. The finished 
 - FTA Private Clarifications (sub-folder of FTA acts): compilations "Summary of FTA Private Clarifications" published by the FTA, one act per
   compilation, listed in `PRIVATE` in `tools/acts_fta.py` (1 loaded: issued up to May 2026; 28 topics, 85 questions and answers, 129 notes).
   Each topic is a section of the act; the Related acts widget under an article of the Law links to the topic that cites it
-  (for example Article 17 -> Family Foundations).
+  (for example Article 17 -> Family Foundations). Under an article of the Law a compilation gets one link, to the first topic that concerns
+  the article (`backrefs_html` in `tools/build.py`); under articles of Cabinet and Ministerial Decisions all topics that cite the article are listed.
 - Related acts: Federal Decree-Law No. 28 of 2022 (Tax Procedures) and Cabinet Decision No. 74 of 2023 (its Executive Regulation).
 
 Watch list (not loaded): Cabinet Decision 209 of 2025 and the expected decision under Article 49 bis.
