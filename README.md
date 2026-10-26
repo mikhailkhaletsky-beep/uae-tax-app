@@ -77,3 +77,5 @@ Cloudflare Workers (static assets), project `uae-tax-app`, connected to this rep
 
 A scheduled task looks at the official listings once a week (Monday morning, Dubai time) and reports acts that are not yet in
 `tools/acts_data.py` or `watch/seen.json`. It only flags; nothing is loaded until the new act is reviewed and added.
+The check covers the Law, Cabinet and Ministerial Decisions, FTA Decisions, Guides, Public Clarifications and the compilations of
+FTA Private Clarifications (a new or replaced "Summary of FTA Private Clarifications" file is reported).
