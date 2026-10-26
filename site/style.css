@@ -252,3 +252,21 @@ h2{font-size:21px;margin:1.8em 0 .5em}
 @media (max-width:520px){.brand span:not(.logo){display:none}.qrow{flex-direction:column}.qrow button{height:42px}}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.side{transition:none}}
 @media print{.top,.side,.toc,.sform,.tabs,.foot{display:none}.shell{display:block}.main{padding:0}}
+
+/* guides and Public Clarifications */
+.gsec{margin:0}
+.gsec.g1>.art-h{font-size:22px;margin:1.8em 0 .5em;padding-top:.6em;border-top:2px solid var(--line)}
+.gsec.g2>.art-h{font-size:19.5px;margin:1.4em 0 .4em}
+.gsec.g3>.art-h{font-size:17.5px}
+.gsec.g4>.art-h,.gsec.g5>.art-h{font-size:16px;font-style:italic}
+.gsec>.art-h .art-n{color:var(--muted);font-weight:600;margin-right:.35em;font-variant-numeric:tabular-nums}
+.gpre{margin:0 0 1.2em}
+.gbox{border:1px solid var(--line);border-left:4px solid var(--accent);background:var(--panel);border-radius:8px;padding:6px 16px;margin:14px 0}
+.gbox p{margin:.55em 0}
+table.gtab{font-size:14px}
+table.gtab th{position:static;text-transform:none;letter-spacing:0;font-size:13.5px;color:var(--ink);background:var(--side);font-weight:650}
+table.gtab td,table.gtab th{min-width:5em}
+.gfig{margin:16px 0;text-align:center}
+.gfig img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:6px;background:#fff}
+.gfig figcaption{font-size:13px;color:var(--muted);margin-top:4px}
+.toc li.gl3 a{padding-left:26px;font-size:12.5px}

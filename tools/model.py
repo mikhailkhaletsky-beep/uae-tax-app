@@ -4,8 +4,11 @@ import os
 import re
 import subprocess
 
+import json
+
 import textparse as T
 import acts_data as A
+import guideparse as GP
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 PDF_DIR = os.path.join(ROOT, "sources", "pdf")
@@ -167,12 +170,20 @@ def split_annex(sections):
     return out
 
 
+def plain_marks(t):
+    return t.replace(GP.B_ON, "").replace(GP.B_OFF, "")
+
+
 def block_plain(b):
     k = b["kind"]
     if k == "p":
-        return ((b.get("marker") or "") + " " + b["text"]).strip()
+        return plain_marks((b.get("marker") or "") + " " + b["text"]).strip()
+    if k == "table":
+        return "\n".join(" | ".join(plain_marks(c) for c in r if c) for r in b["rows"])
+    if k == "fig":
+        return b.get("alt", "")
     if k == "defs":
-        return "\n".join(f"{r[0]}: {r[1]}" for r in b["rows"])
+        return "\n".join(plain_marks(f"{r[0]}: {r[1]}") for r in b["rows"])
     if k == "pre":
         return b["text"]
     if k == "etable":
@@ -199,7 +210,94 @@ def normalize_blocks(blocks, rules):
             continue
 
 
+PARSED_DIR = os.path.join(ROOT, "sources", "parsed")
+GLOSSARY = re.compile(r"^(glossary|definitions?|abbreviations|definitions and abbreviations|terms and definitions)$", re.I)
+
+
+def guide_blocks(ed):
+    """Blocks of a guide / Public Clarification: parsed from the PDF once (slow) and kept in sources/parsed/<key>.json."""
+    key = ed["src"]
+    pdf = os.path.join(PDF_DIR, key + ".pdf")
+    os.makedirs(PARSED_DIR, exist_ok=True)
+    cache = os.path.join(PARSED_DIR, key + ".json")
+    if os.path.exists(cache) and os.path.getmtime(cache) >= os.path.getmtime(pdf) and os.path.getmtime(cache) >= os.path.getmtime(GP.__file__):
+        return json.load(open(cache, encoding="utf-8"))
+    d = GP.Doc(pdf, ed.get("gcfg"))
+    d.load()
+    b = GP.Builder(d)
+    blocks = b.build()
+    out = dict(blocks=blocks, notes=b.notes, body=d.body, pages=len(d.pages))
+    json.dump(out, open(cache, "w", encoding="utf-8"), ensure_ascii=False)
+    return out
+
+
+def glossary_defs(blocks):
+    """Definition paragraphs ("**Term:** text") of a glossary section become one definitions list."""
+    out, rows = [], []
+
+    def flush():
+        nonlocal rows
+        if rows:
+            out.append({"kind": "defs", "rows": rows})
+            rows = []
+    for b in blocks:
+        if b["kind"] == "p" and not b.get("marker") and b["text"].startswith(GP.B_ON):
+            j = b["text"].find(GP.B_OFF)
+            term = b["text"][1:j].strip().rstrip(":").strip()
+            rest = b["text"][j + 1:].lstrip().lstrip(":").strip()
+            if 0 < len(term.split()) <= 14 and rest:
+                rows.append((term, rest, b.get("note", "")))
+                continue
+        flush()
+        out.append(b)
+    flush()
+    return out
+
+
+def load_guide(act, ed):
+    g = guide_blocks(ed)
+    pre, sections, ids, cur = [], [], set(), None
+    for b in g["blocks"]:
+        if b["kind"] == "heading":
+            sid = "s-" + b["num"].replace(".", "-")
+            while sid in ids:
+                sid += "x"
+            ids.add(sid)
+            cur = {"type": "article", "kind": "article", "num": b["num"], "label": "" if b.get("nonum") else b["num"],
+                   "title": b["title"], "id": sid, "lvl": b["lvl"], "blocks": []}
+            sections.append(cur)
+        else:
+            (cur["blocks"] if cur else pre).append(b)
+    for s in sections:
+        if GLOSSARY.match(s["title"].strip()):
+            s["blocks"] = glossary_defs(s["blocks"])
+    rules = act.get("normalize")
+    if rules:
+        normalize_blocks(pre, rules)
+        for sct in sections:
+            normalize_blocks([sct], rules)
+            normalize_blocks(sct.get("blocks", []), rules)
+    arts = []
+    for s in sections:
+        plain = "\n".join(block_plain(b) for b in s["blocks"])
+        arts.append({"id": s["id"], "num": s["num"], "title": s["title"], "text": plain})
+    used = set()
+    for s in sections:
+        for b in s["blocks"]:
+            for n in str(b.get("note", "")).split(","):
+                used.add(n)
+            if b["kind"] == "defs":
+                for r in b["rows"]:
+                    used.update(str(r[2]).split(","))
+    notes = {k: v for k, v in g["notes"].items() if k in used}
+    leftover = {k: v for k, v in g["notes"].items() if k not in used}
+    return dict(act=act["id"], ed=ed["id"], pre=pre, sections=sections, notes=notes, leftover=leftover, arts=arts,
+                pre_text="\n".join(block_plain(b) for b in pre))
+
+
 def load_edition(act, ed):
+    if ed.get("fmt") == "guide":
+        return load_guide(act, ed)
     path = edition_text_path(ed)
     blocks, notes = T.parse_file(path, want_notes=True)
     blocks = T.upgrade_tables(blocks)

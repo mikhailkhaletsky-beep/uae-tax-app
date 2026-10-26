@@ -15,7 +15,8 @@ for (aid, eid), d in docs.items():
             nums.append(int(m.group(1) or m.group(2)))
     gaps = [n for n in range(1, (max(nums) if nums else 0) + 1) if n not in nums]
     dup = sorted({s["num"] for s in arts if sum(1 for t in arts if t["num"] == s["num"]) > 1})
-    empty = [s["num"] for s in arts if not s["blocks"]]
+    empty = [s["num"] for k, s in enumerate(arts)
+             if not s["blocks"] and not (s.get("lvl") and k + 1 < len(arts) and arts[k + 1].get("lvl", 0) > s["lvl"])]   # a heading that only introduces sub-headings is fine
     arabic = sum(1 for s in arts for b in s["blocks"] if b["kind"] == "p" and re.search(r"[؀-ۿ]", b["text"]))
     longp = [s["num"] for s in arts for b in s["blocks"] if b["kind"] == "p" and len(b["text"]) > 2500]
     headinp = [s["num"] for s in arts for b in s["blocks"] if b["kind"] == "p" and re.search(r"(?:^|\s)Article \(?\d+\)?\s*$", b["text"])]

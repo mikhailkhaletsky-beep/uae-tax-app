@@ -1,21 +1,11 @@
 {
-  "note": "Acts seen on the official listings as of 25 Oct 2026 that are NOT in the pilot scope (Law + Cabinet Decisions). The weekly check does not report these again. Update this file when a new item has been reviewed.",
+  "note": "Acts seen on the official listings that are deliberately NOT loaded. Everything seen on the first pages of the lists as of 26 Oct 2026 (Cabinet, Ministerial and FTA decisions, FTA guides, Public Clarifications) is already in tools/acts_data.py. The weekly check does not report items listed here again.",
   "pages_checked": [
     "https://tax.gov.ae/en/legislation/corporate.tax.aspx",
     "https://tax.gov.ae/en/legislation/cabinet.decisions.aspx",
-    "https://mof.gov.ae/en/financial-legislation/"
+    "https://mof.gov.ae/en/financial-legislation/",
+    "https://tax.gov.ae/en/taxes/corporate.tax/corporate.tax.guides.aspx",
+    "https://tax.gov.ae/en/taxes/corporate.tax/public.clarifications.aspx"
   ],
-  "seen": [
-    "FTA Decision No. 15 of 2026 on Provisions on Exemption from Corporate Tax",
-    "FTA Decision No. 12 of 2026 on Registration and Deregistration Timelines",
-    "FTA Decision No. 6 of 2026 on Determining the Additional Procedures for the Compliance of QFZP",
-    "Ministerial Decision No. 173 of 2025 on Depreciation Adjustments for Investment Properties Held at Fair Value",
-    "FTA Decision No. 8 of 2025 on Timelines for Qualifying Investment Funds and investors",
-    "Ministerial Decision No. 230 of 2025 on Specification of Recognised Price Reporting Agencies",
-    "Ministerial Decision No. 229 of 2025 on Qualifying Activities and Excluded Activities",
-    "Ministerial Decision No. 96 of 2025 on Conditions to Exempt Certain Real Estate Investment Trusts from Corporate Tax",
-    "Ministerial Decision No. 131 of 2026 Amending Ministerial Decision No. 73 of 2023 on Small Business Relief",
-    "Ministerial Decision No. 133 of 2026 on the Entities Required to File the Pillar Two Information Return",
-    "Ministerial Decision No. 96 of 2026 on the Commentary and Agreed Administrative Guidance for Cabinet Decision No. 142 of 2024"
-  ]
+  "seen": []
 }

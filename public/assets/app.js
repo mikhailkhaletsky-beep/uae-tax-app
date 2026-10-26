@@ -202,7 +202,7 @@
     lastResults.slice(0, shown).forEach(function (r) {
       var d = r.d, a = IDX.acts[d.a];
       var isAct = d.i === '' && d.n === '';
-      var title = isAct ? a.short : (d.n + (d.h && d.n !== 'Preamble' ? ' – ' + d.h : ''));
+      var title = isAct ? a.short : (d.n ? d.n + (d.h && d.n !== 'Preamble' ? ' – ' + d.h : '') : (d.h || ''));
       var edl = (IDX.eds && IDX.eds[a.id] && IDX.eds[a.id][d.e]) || '';
       var ed = !d.c ? ' <span class="chip arch">archived edition' + (edl ? ': ' + esc(edl) : '') + '</span>' : '';
       var st = a.status === 'repealed' ? ' <span class="chip bad">repealed</span>' : '';

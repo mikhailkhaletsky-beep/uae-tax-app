@@ -363,9 +363,9 @@ ACTS = [
 # Watch list: not part of the pilot, tracked for weekly monitoring only
 WATCH = [
     dict(id="R-03", short="Cabinet Decision No. 209 of 2025", title="Cabinet Decision on Exchange of Information Upon Request for Tax Purposes",
-         note="Seen only on uaelegislation.gov.ae. Not in the pilot scope."),
+         note="Seen only on uaelegislation.gov.ae. Not loaded."),
     dict(id="R-04", short="Expected Cabinet Decision under Article 49 bis", title="Cabinet Decision on conditions, timeframes and procedures for claiming payment of unutilised tax credits",
-         note="Required by Article 49 bis of Federal Decree-Law No. 47 of 2022. Not yet published as of 25 Oct 2026. Not in the pilot scope."),
+         note="Required by Article 49 bis of Federal Decree-Law No. 47 of 2022. Not yet published as of 26 Oct 2026. Not loaded."),
 ]
 
 
@@ -391,7 +391,9 @@ NAMES = {
     "CD-17": "Sports entities exemption",
 }
 import acts_mof as _mof
+import acts_fta as _fta
 
 ACTS.extend(_mof.build())
+ACTS.extend(_fta.build())
 for _a in ACTS:
     _a.setdefault("name", NAMES.get(_a["id"], _a["subject"]))

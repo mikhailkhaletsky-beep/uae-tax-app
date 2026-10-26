@@ -28,6 +28,9 @@ esc = html.escape
 
 
 def fmt_date(iso):
+    if iso and re.match(r"^\d{4}-\d{2}$", iso):                 # month only
+        import datetime
+        return datetime.date.fromisoformat(iso + "-01").strftime("%B %Y")
     if not iso or not re.match(r"^\d{4}-\d{2}-\d{2}$", iso):
         return iso or ""
     import datetime
@@ -73,20 +76,33 @@ def sorted_editions(a):
 
 # --------------------------------------------------------------------------- reference linking
 ACT_REF_RE = re.compile(
-    r"\b(?P<kind>Federal Decree-Law|Cabinet Decision|Ministerial Decision)\s+No\.?\s*\(?(?P<no>\d+)\)?\s*(?:of|for)\s*(?:the\s+year\s+)?(?P<yr>\d{4})"
+    r"\b(?P<kind>Federal Decree-Law|Federal Decree Law|Cabinet Decision|Ministerial Decision|Federal Tax Authority Decision|FTA Decision|Decision of the Federal Tax Authority)\s+No\.?\s*\(?(?P<no>\d+)\)?\s*(?:of|for)\s*(?:the\s+year\s+)?(?P<yr>\d{4})"
 )
+KIND_NORM = {"Federal Decree Law": "Federal Decree-Law", "Federal Tax Authority Decision": "FTA Decision",
+             "Decision of the Federal Tax Authority": "FTA Decision"}
+
+
+def ref_key(m):
+    k = m.group("kind")
+    return (KIND_NORM.get(k, k), int(m.group("no")), int(m.group("yr")))
+
+
 BYREF = {}
 for _a in A.ACTS:
-    m = re.match(r"^(Federal Decree-Law|Cabinet Decision|Ministerial Decision) No\. (\d+) of (\d{4})", _a["short"])
+    m = re.match(r"^(Federal Decree-Law|Cabinet Decision|Ministerial Decision|FTA Decision) No\. (\d+) of (\d{4})", _a["short"])
     if m:
         BYREF[(m.group(1), int(m.group(2)), int(m.group(3)))] = _a["id"]
+# guides and Public Clarifications are cited by their codes (CTGSBR1, CTP012 ...)
+BYCODE = {_a["code"]: _a["id"] for _a in A.ACTS if _a.get("code")}
+CODE_RE = re.compile(r"\b(" + "|".join(sorted((re.escape(c) for c in BYCODE), key=len, reverse=True)) + r")\b") if BYCODE else None
 
-ART_RE = re.compile(r"\b(?P<w>Articles?)\s*\(?(?P<num>\d+(?:\.\d+)*)\)?(?P<bis>\s*\(?bis\)?)?(?P<more>(?:\s*(?:,|and|or)\s*\(\d+\))*)")
+ART_RE = re.compile(r"\b(?P<w>Articles?)\s*\(?(?P<num>\d+(?:\.\d+)*)\)?(?P<bis>\s*\(?bis\)?)?(?P<more>(?:\s*(?:,|and|or)\s*\(\d+\)|\s*(?:,|and|or)\s*\d+(?![\d.]))*)")
 TAIL_RE = re.compile(
-    r"^(?:\s*,?\s*(?:(?:and|or)\s+)?(?:Clauses?|Paragraphs?|Sub-?clauses?|Items?|Subparagraphs?)\s*\(?[0-9A-Za-z]+\)?(?:\s*\(\s*[0-9A-Za-z]+\s*\))*)*"
+    r"^(?:\s*\(\s*[0-9A-Za-z]{1,4}\s*\))*(?:\s*,?\s*(?:(?:and|or)\s+)?(?:Clauses?|Paragraphs?|Sub-?clauses?|Items?|Subparagraphs?)\s*\(?[0-9A-Za-z]+\)?(?:\s*\(\s*[0-9A-Za-z]+\s*\))*)*"
     r"\s*(?:of|in|under)\s+(?:the\s+)?(?:aforementioned\s+)?(?P<this>this\s+)?"
-    r"(?P<who>(?:Federal Decree-Law|Cabinet Decision|Ministerial Decision)\s+No\.?\s*\(?\d+\)?\s*(?:of|for)\s*\d{4}|Federal Decree-Law|Decree-Law|Executive Regulation|Decision|Regulation|Corporate Tax Law|Tax Procedures Law|Tax Law|Law)"
+    r"(?P<who>(?:Federal Decree-Law|Federal Decree Law|Cabinet Decision|Ministerial Decision|Federal Tax Authority Decision|FTA Decision)\s+No\.?\s*\(?\d+\)?\s*(?:of|for)\s*\d{4}|Federal Decree-Law|Decree-Law|Executive Regulation|Decision|Regulation|Corporate Tax Law|Tax Procedures Law|Tax Law|Law)"
 )
+SEC_RE = re.compile(r"\b(?P<w>Sections?|sections?|Chapters?|chapters?)\s+(?P<num>\d+(?:\.\d+)*)\.?(?=(?:\s*(?:,|and|or|to)\s*\d)|[\s,;:)]|$)")
 
 ARTS = {}  # act id -> {normalized num: (id, title)}
 for (aid, eid), d in DOCS.items():
@@ -115,7 +131,7 @@ def build_aliases(aid):
                     term, text = row[0], row[1]
                     mm = ACT_REF_RE.search(text)
                     if mm:
-                        key = (mm.group("kind"), int(mm.group("no")), int(mm.group("yr")))
+                        key = ref_key(mm)
                         if key in BYREF and len(text) < 220:
                             al[term] = BYREF[key]
     return al
@@ -132,9 +148,41 @@ def kind_of(a):
     return "Federal Decree-Law" if a["short"].startswith("Federal Decree-Law") else "Cabinet Decision"
 
 
+B_ON, B_OFF = "", ""
+
+
+_ALIAS_TAIL = {}
+TAIL_PRE = (r"^(?:\s*\(\s*[0-9A-Za-z]{1,4}\s*\))*(?:\s*,?\s*(?:(?:and|or)\s+)?(?:Clauses?|Paragraphs?|Sub-?clauses?|Items?|Subparagraphs?)"
+            r"\s*\(?[0-9A-Za-z]+\)?(?:\s*\(\s*[0-9A-Za-z]+\s*\))*)*\s*(?:of|in|under)\s+(?:the\s+)?")
+
+
+def alias_tail_re(aid):
+    """Tail matcher for terms the act itself defines for another act (for example "QDMTT Legislation")."""
+    if aid not in _ALIAS_TAIL:
+        terms = [t for t in ALIASES.get(aid, {}) if t not in ("Corporate Tax Law", "Tax Procedures Law", "Decree-Law")]
+        _ALIAS_TAIL[aid] = (re.compile(TAIL_PRE + "(?P<term>" + "|".join(re.escape(t) for t in sorted(terms, key=len, reverse=True)) + ")")
+                            if terms else None)
+    return _ALIAS_TAIL[aid]
+
+
+def split_marks(text):
+    """Bold marks of parsed guides -> (plain text, [(position, mark)])."""
+    if B_ON not in text and B_OFF not in text:
+        return text, []
+    plain, marks, n = [], [], 0
+    for part in re.split("([])", text):
+        if part in (B_ON, B_OFF):
+            marks.append((n, part))
+        else:
+            plain.append(part)
+            n += len(part)
+    return "".join(plain), marks
+
+
 def link_text(text, aid, ctx_art=None, collect=False, page_ed=None):
     """Escape `text` and add links for article references and act mentions."""
     a = ACTS[aid]
+    text, marks = split_marks(text)
     spans = []
     # article references
     for m in ART_RE.finditer(text):
@@ -143,29 +191,36 @@ def link_text(text, aid, ctx_art=None, collect=False, page_ed=None):
         tail = text[m.end(): m.end() + 150]
         mt = TAIL_RE.match(tail)
         target = None
-        if mt:
+        if not mt and alias_tail_re(aid):
+            ma = alias_tail_re(aid).match(tail)
+            if ma:
+                target = ALIASES[aid].get(ma.group("term"))
+                mt = ma
+        if mt and target:
+            pass
+        elif mt:
             if mt.group("this"):
                 target = a.get("this_target", aid)      # amending acts quote text in which "this Decree-Law" is the amended law
             else:
                 who = mt.group("who")
                 mr = ACT_REF_RE.match(who)
                 if mr:
-                    target = BYREF.get((mr.group("kind"), int(mr.group("no")), int(mr.group("yr"))))
+                    target = BYREF.get(ref_key(mr))
                 elif who in ("Decree-Law", "Federal Decree-Law", "Law"):
                     target = ALIASES[aid].get("Decree-Law") or (aid if a["group"] == "law" else None)
-                    if target is None and aid.startswith("CD"):
+                    if target is None and (aid.startswith("CD") or a["group"] == "fta"):
                         target = "L-01"
                 elif who in ("Decision", "Regulation", "Executive Regulation"):
-                    target = aid
+                    target = aid if not a.get("guide") else None
                 else:
                     target = ALIASES[aid].get(who)
         else:
-            target = aid
+            target = aid if not a.get("guide") else None
         if not target or target not in ARTS:
             continue
-        # the first number plus any further "(N)" numbers of a list such as "Articles (45) and (46)"
+        # the first number plus any further numbers of a list such as "Articles (45) and (46)" or "Articles 3 and 4"
         refs = [(num, m.start(), m.end() - len(m.group("more")))]
-        for mm in re.finditer(r"\((\d+)\)", m.group("more")):
+        for mm in re.finditer(r"\(?(\d+)\)?", m.group("more")):
             refs.append((mm.group(1), m.start("more") + mm.start(), m.start("more") + mm.end()))
         for num, rs, re_ in refs:
             while num not in ARTS[target] and "." in num:       # "Article 1.2.2" -> clause 2 of Article 1.2
@@ -184,10 +239,18 @@ def link_text(text, aid, ctx_art=None, collect=False, page_ed=None):
                 BACK[target][art_id].append((aid, ctx_art[0], ctx_art[1]))
                 CITES[aid].add(target)
                 CITED_BY[target].add(aid)
+    # references to sections of the same guide ("see Section 3.1")
+    if a.get("guide"):
+        for m in SEC_RE.finditer(text):
+            if re.match(r"\s*(?:of|in)\s+(?:the\s+)?(?!this\b)[A-Z]", text[m.end(): m.end() + 30]):
+                continue
+            num = m.group("num")
+            hit = ARTS.get(aid, {}).get(num)
+            if hit and not any(s <= m.start() < e for s, e, _ in spans):
+                spans.append((m.start(), m.end(), f'<a class="xref" href="#{hit[0]}" title="{esc(hit[1])}">{esc(m.group(0))}</a>'))
     # act mentions
     for m in ACT_REF_RE.finditer(text):
-        key = (m.group("kind"), int(m.group("no")), int(m.group("yr")))
-        tgt = BYREF.get(key)
+        tgt = BYREF.get(ref_key(m))
         if not tgt or tgt == aid:
             continue
         if any(s <= m.start() < e or s < m.end() <= e for s, e, _ in spans):
@@ -195,24 +258,73 @@ def link_text(text, aid, ctx_art=None, collect=False, page_ed=None):
         spans.append((m.start(), m.end(), f'<a class="actref" href="{act_url(tgt)}">{esc(m.group(0))}</a>'))
         if collect:
             ACTREF_USE[aid].add(tgt)
+    if CODE_RE:
+        for m in CODE_RE.finditer(text):
+            tgt = BYCODE[m.group(1)]
+            if tgt == aid or any(s <= m.start() < e or s < m.end() <= e for s, e, _ in spans):
+                continue
+            spans.append((m.start(), m.end(), f'<a class="actref" href="{act_url(tgt)}" title="{esc(ACTS[tgt]["name"])}">{esc(m.group(0))}</a>'))
+            if collect:
+                ACTREF_USE[aid].add(tgt)
     spans.sort()
-    out, pos = [], 0
+    kept, pos = [], 0
     for s, e, h in spans:
         if s < pos:
             continue
-        out.append(esc(text[pos:s]))
-        out.append(h)
+        kept.append((s, e, h))
         pos = e
-    out.append(esc(text[pos:]))
+    mk = defaultdict(list)
+    for p, ch in marks:                                  # a bold run never starts or ends inside a link
+        for s, e, _ in kept:
+            if s < p < e:
+                p = s if ch == B_ON else e
+                break
+        mk[p].append(ch)
+    starts = {s: (e, h) for s, e, h in kept}
+    out, cur, depth = [], 0, 0
+    for p in sorted(set(list(mk) + list(starts) + [len(text)])):
+        if p < cur:
+            continue
+        if p > cur:
+            out.append(esc(text[cur:p]))
+            cur = p
+        for ch in mk.get(p, []):
+            if ch == B_ON:
+                out.append("<strong>")
+                depth += 1
+            elif depth:
+                out.append("</strong>")
+                depth -= 1
+        if p in starts:
+            e, h = starts[p]
+            out.append(h)
+            cur = e
+    out.append("</strong>" * depth)
     return "".join(out)
 
 
 # --------------------------------------------------------------------------- rendering of blocks
+FN_SEEN = set()
+
+
 def fn_mark(n):
     if not n:
         return ""
-    links = ",".join(f'<a id="fnref-{x}" href="#fn-{x}">{x}</a>' for x in str(n).split(","))
-    return f'<sup class="fn">{links}</sup>'
+    parts = []
+    for x in str(n).split(","):
+        idattr = ""
+        if x not in FN_SEEN:                       # a note quoted again keeps the id of its first mark
+            FN_SEEN.add(x)
+            idattr = f' id="fnref-{x}"'
+        parts.append(f'<a{idattr} href="#fn-{x}">{x}</a>')
+    return f'<sup class="fn">{",".join(parts)}</sup>'
+
+
+def back_link(n):
+    """The return arrow of a note, only when the text really points to it (some notes are never referenced in the source)."""
+    if n not in FN_SEEN:
+        return ""
+    return f' <a class="back" href="#fnref-{n}" aria-label="Back to text">&#8617;</a>'
 
 
 def render_block(b, aid, ctx_art, collect, page_ed):
@@ -230,6 +342,19 @@ def render_block(b, aid, ctx_art, collect, page_ed):
             tid = "def-" + M.slug(term)
             rows.append(f'<div class="def" id="{tid}"><dt>{esc(term)}{fn_mark(note)}</dt><dd>{L(text)}</dd></div>')
         return '<dl class="defs">' + "".join(rows) + "</dl>"
+    if k == "table":
+        rows = b["rows"]
+        nh = b.get("hdr", 1)
+        def cell(tag, c):
+            c = c or ""
+            return f"<{tag}>{L(c)}</{tag}>"
+        head = "".join("<tr>" + "".join(cell("th", c) for c in r) + "</tr>" for r in rows[:nh])
+        body = "".join("<tr>" + "".join(cell("td", c) for c in r) + "</tr>" for r in rows[nh:])
+        return (f'<div class="scroll"><table class="grid gtab">' + (f"<thead>{head}</thead>" if head else "") +
+                f"<tbody>{body}</tbody></table></div>")
+    if k == "fig":
+        return (f'<figure class="gfig"><img src="{esc(b["src"])}" alt="{esc(b.get("alt", ""))}" loading="lazy" width="{b.get("w", 0) or ""}" height="{b.get("h", 0) or ""}">'
+                + (f'<figcaption>{L(b["caption"])}</figcaption>' if b.get("caption") else "") + "</figure>")
     if k == "pre":
         return f'<div class="scroll"><pre class="layout">{esc(b["text"])}</pre></div>'
     if k == "etable":
@@ -247,11 +372,69 @@ def render_block(b, aid, ctx_art, collect, page_ed):
     return ""
 
 
-def render_doc(doc, aid, ed, collect=False):
+def render_blocks(blocks, aid, ctx, collect, page_ed):
+    """Blocks of a section; consecutive paragraphs of one shaded box of a guide are wrapped in a box."""
+    out, i = [], 0
+    while i < len(blocks):
+        b = blocks[i]
+        if b.get("box"):
+            j = i
+            while j < len(blocks) and blocks[j].get("box") == b["box"] and blocks[j]["kind"] == "p":
+                j += 1
+            inner = "".join(render_block(x, aid, ctx, collect, page_ed) for x in blocks[i:j])
+            out.append(f'<div class="gbox">{inner}</div>')
+            i = j
+            continue
+        out.append(render_block(b, aid, ctx, collect, page_ed))
+        i += 1
+    return "".join(out)
+
+
+def render_guide(doc, aid, ed, collect=False):
+    """Guides and Public Clarifications: numbered headings of several levels, tables, footnotes."""
     a = ACTS[aid]
     page_ed = ed["id"]
     is_cur = current_ed(a)["id"] == page_ed
     collect = collect and is_cur
+    FN_SEEN.clear()
+    parts, toc = [], []
+    if doc["pre"]:
+        parts.append('<section class="gpre">' + render_blocks(doc["pre"], aid, None, collect, page_ed) + "</section>")
+    for s in doc["sections"]:
+        lvl = min(s["lvl"], 5)
+        label = s["label"]
+        shown = label if label else ""
+        ctx = (s["id"], (f"{label} – " if label else "") + s["title"])
+        body = render_blocks(s["blocks"], aid, ctx, collect, page_ed)
+        tag = f"h{min(lvl + 1, 6)}"
+        if lvl <= 3:
+            toc.append(("chapter" if lvl == 1 else ("subchapter" if lvl == 2 else "gl3"), s["id"], (f"{label} " if label else "") + s["title"]))
+        back = f"<!--BACK:{aid}:{s['id']}-->" if is_cur else ""
+        num = f'<span class="art-n">{esc(shown)}</span> ' if shown else ""
+        parts.append(
+            f'<section class="art gsec g{lvl}" id="{s["id"]}"><{tag} class="art-h"><a class="anchor" href="#{s["id"]}" aria-label="Link to {esc(ctx[1])}">#</a>'
+            f'{num}<span class="art-t">{esc(s["title"])}</span></{tag}>{back}{body}</section>')
+    notes = ""
+    allnotes = dict(doc["notes"])
+    allnotes.update(doc["leftover"])
+    if allnotes:
+        items = "".join(
+            f'<li id="fn-{n}" value="{n}">{link_text(t, aid, None, collect, page_ed)}{back_link(n)}</li>'
+            for n, t in sorted(allnotes.items(), key=lambda kv: int(kv[0])))
+        notes = f'<section class="notes"><h2>Notes</h2><ol>{items}</ol></section>'
+        toc.append(("chapter", "notes-end", "Notes"))
+        notes = notes.replace('<section class="notes">', '<section class="notes" id="notes-end">', 1)
+    return "\n".join(parts) + notes, toc
+
+
+def render_doc(doc, aid, ed, collect=False):
+    if ACTS[aid].get("guide"):
+        return render_guide(doc, aid, ed, collect)
+    a = ACTS[aid]
+    page_ed = ed["id"]
+    is_cur = current_ed(a)["id"] == page_ed
+    collect = collect and is_cur
+    FN_SEEN.clear()
     parts, toc = [], []
     has_titles = any(s["type"] == "chapter" and s["label"].startswith(("Title", "Part", "Book")) for s in doc["sections"])
     if doc["pre"]:
@@ -282,7 +465,7 @@ def render_doc(doc, aid, ed, collect=False):
         allnotes = dict(doc["notes"])
         allnotes.update(doc["leftover"])
         items = "".join(
-            f'<li id="fn-{n}" value="{n}">{link_text(t, aid, None, collect, page_ed)} <a class="back" href="#fnref-{n}" aria-label="Back to text">&#8617;</a></li>'
+            f'<li id="fn-{n}" value="{n}">{link_text(t, aid, None, collect, page_ed)}{back_link(n)}</li>'
             for n, t in sorted(allnotes.items(), key=lambda kv: int(kv[0]))
         )
         notes = f'<section class="notes"><h2>Notes</h2><ol>{items}</ol></section>'
@@ -662,8 +845,15 @@ def render_text_page(aid, ed):
         src = '<p class="provenance">Source: machine translation prepared for this database from the Arabic original.</p>'
     ed_note = f'<p class="ednote">{esc(ed["note"])}</p>' if ed.get("note") else ""
     ed_note = edition_box(a, ed) + (derive_note(a, ed) if ed.get("derive") else "") + ed_note
-    disc = "" if ed.get("machine") else ('<p class="disc">English text as published by the ' + esc(ed["publisher"]) + '. The Arabic text prevails.</p>' if a.get("en_only")
-                                         else '<p class="disc">Unofficial English translation. The Arabic text prevails.</p>')
+    if ed.get("machine"):
+        disc = ""
+    elif a.get("guide"):
+        disc = ('<p class="disc">English text as published by the Federal Tax Authority. This is guidance, not legislation: it is not legally binding '
+                'and does not change the law. Where the guidance and the law differ, the law prevails.</p>')
+    elif a.get("en_only"):
+        disc = ('<p class="disc">English text as published by the ' + esc(ed["publisher"]) + ' (an unofficial translation). The Arabic text prevails.</p>')
+    else:
+        disc = '<p class="disc">Unofficial English translation. The Arabic text prevails.</p>'
     body = f'{intro}<article class="doc">{head}{ed_note}{disc}<div class="text">{h}</div>{src}</article>'
     return page(a["short"], body, active=aid, toc=toc, desc=a["title"],
                 canonical=None)
@@ -1076,7 +1266,7 @@ def build_search():
                 pieces.append(("preamble", "Preamble", "", doc["pre_text"]))
             for s in doc["sections"]:
                 if s["type"] == "article":
-                    label = s.get("label") or f'Article {s["num"]}'
+                    label = s["label"] if s.get("lvl") else (s.get("label") or f'Article {s["num"]}')
                     txt = "\n".join(M.block_plain(b) for b in s["blocks"])
                     pieces.append((s["id"], label, s["title"], txt))
             for i, label, title, txt in pieces:
@@ -1128,18 +1318,27 @@ def render_pending_list():
         if current_ed(a) and current_ed(a).get("machine"):
             rows.append(f'<li><b>{esc(a["short"])}</b> – only a machine translation of the Arabic is available in English.</li>')
     watch = "".join(f'<li><b>{esc(w["short"])}</b> – {esc(w["note"])}</li>' for w in A.WATCH)
-    body = (f'<article class="doc"><h1>Texts not yet loaded</h1><p>Gaps in the pilot collection, with the reason.</p><ul class="rel">{"".join(rows)}</ul>'
-            f'<h2>Watch list (outside the pilot scope)</h2><p>Acts that are tracked in the weekly check but not loaded.</p><ul class="rel">{watch}</ul></article>')
+    body = (f'<article class="doc"><h1>Texts not yet loaded</h1><p>Gaps in the collection, with the reason.</p><ul class="rel">{"".join(rows)}</ul>'
+            f'<h2>Possible gaps among FTA publications</h2>'
+            f'<p>The FTA website lists its decisions, guides and Public Clarifications on several pages. The first page of each list could be read; later pages of some lists could not be opened automatically, '
+            f'so an older FTA publication that is shown only there may be missing. If you know of one, send its address and it will be added. The weekly check looks at the first pages of the official lists.</p>'
+            f'<h2>Watch list</h2><p>Acts that are tracked in the weekly check but not loaded.</p><ul class="rel">{watch}</ul></article>')
     return page("Texts not yet loaded", body)
 
 
 def render_about():
     body = f"""<article class="doc"><h1>About this database</h1>
 <p>{SITE_NAME} is a working title for a personal, non-commercial reference database of UAE corporate tax legislation. It holds the full texts of acts, not links to other websites.</p>
-<h2>Pilot scope</h2>
-<p>Federal Decree-Law No. 47 of 2022 on the Taxation of Corporations and Businesses (consolidated text), the Cabinet Decisions made under it, and the Tax Procedures Law and its Executive Regulation. Ministerial Decisions, Federal Tax Authority decisions, guides and Public Clarifications will be added in later stages.</p>
+<h2>What is in the database</h2>
+<ul class="rel"><li><b>Federal Decree-Law No. 47 of 2022</b> on the Taxation of Corporations and Businesses (consolidated text, with its earlier editions) and the amending Decree-Laws.</li>
+<li><b>Cabinet Decisions</b> made under the Law.</li>
+<li><b>Ministerial Decisions</b> of the Ministry of Finance made under the Law.</li>
+<li><b>Federal Tax Authority (FTA) acts</b>: FTA Decisions, the Corporate Tax Guides and Top-up Tax Guides, and the Public Clarifications.</li>
+<li><b>Tax procedures</b>: the Tax Procedures Law and its Executive Regulation.</li></ul>
+<p>Ministerial Decisions and FTA acts are added in English only, as published by the Ministry of Finance (mof.gov.ae) and the Federal Tax Authority (tax.gov.ae); each act page links to the publisher's original file, and the Arabic version, where it exists, is on the publisher's website. FTA Guides and Public Clarifications are guidance: they explain how the FTA applies the law, they are not legally binding and they do not change the law. The date shown for a guide or a Public Clarification is its publication date (often only the month is known).</p>
+<p>The FTA lists some documents on pages that could be read only in part, so the collection of FTA acts may not be complete. Gaps that are known are listed under <a href="/pending/">Texts not yet loaded</a>.</p>
 <h2>How the texts were prepared</h2>
-<ul class="rel"><li>English texts are taken from the publications of the Ministry of Finance (mof.gov.ae) and the Federal Tax Authority (tax.gov.ae). They are unofficial translations; the Arabic text prevails. The Arabic original of every act is available on its own tab.</li>
+<ul class="rel"><li>English texts are taken from the publications of the Ministry of Finance (mof.gov.ae) and the Federal Tax Authority (tax.gov.ae). They are unofficial translations; the Arabic text prevails. For the Law, the amending Decree-Laws and the Cabinet Decisions the Arabic original is available on its own tab; Ministerial Decisions and FTA acts are loaded in English only.</li>
 <li>Where no official English text exists, a machine translation is shown and labelled as such.</li>
 <li>Issue and effective dates are taken from the text of each act, not from the dates shown in the portals' lists, which are often different.</li>
 <li>Editions: the current consolidated text opens by default. Earlier editions of the Corporate Tax Law are listed in its version log, where they can be read and compared (legal redline). Next to each article that was amended, a faded link leads to the wording it had before.</li>
@@ -1147,7 +1346,7 @@ def render_about():
 <li id="terminology">Terminology of the Corporate Tax Law is unified in every edition: the three variants “Supplementary Tax”, “Top-Up Tax” and “top-up tax” became “Top-up Tax”; “Decree by Law” became “Decree-Law”; “resolution” became “decision” (as in “decision issued by the Cabinet”); the term “Administrative Penalties” of the 2022 text became “Administrative Fines”; and wherever the text uses a term defined in Article 1 (Corporate Tax, Withholding Tax, Withholding Tax Credit, Foreign Tax Credit, Resident Person, Non-Resident Person, Permanent Establishment, Qualifying Mutual Fund, Multinational Enterprise, Administrative Fines) it is capitalised as in the definition. Nothing else in the wording was changed. The amending laws are shown as published.</li>
 <li>Links between acts (for example from a Cabinet Decision to the article of the Law it implements) are generated automatically from the references in the text and should be checked.</li></ul>
 <h2>Limits</h2>
-<p>This site is not legal advice and is not affiliated with any authority. Always check the official publication before relying on a text. Tables are shown in simplified form.</p>
+<p>This site is not legal advice and is not affiliated with any authority. Always check the official publication before relying on a text. Tables and figures in guides are shown in simplified form: check the PDF of the FTA for the exact layout.</p>
 <p class="small">Last updated {UPDATED}.</p></article>"""
     return page("About", body)
 
