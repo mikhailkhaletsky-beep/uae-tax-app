@@ -333,7 +333,7 @@ def render_block(b, aid, ctx_art, collect, page_ed):
     if k == "p":
         lvl = min(b.get("level", 0), 4)
         mk = f'<span class="mk">{esc(b["marker"])}</span>' if b.get("marker") else ""
-        cls = f"cl l{lvl}" + (" strong" if b.get("strong") else "") + (" has-mk" if b.get("marker") else "")
+        cls = f"cl l{lvl}" + (" strong" if b.get("strong") else "") + (" has-mk" if b.get("marker") else "") + (" cont" if b.get("cont") else "")
         return f'<p class="{cls}">{mk}{L(b["text"])}{fn_mark(b.get("note"))}</p>'
     if k == "defs":
         rows = []
@@ -406,6 +406,10 @@ def render_guide(doc, aid, ed, collect=False):
         shown = label if label else ""
         ctx = (s["id"], (f"{label} – " if label else "") + s["title"])
         body = render_blocks(s["blocks"], aid, ctx, collect, page_ed)
+        if s.get("notes"):                       # private clarifications: the legal references of this topic
+            body += ('<div class="secnotes"><h4>Legal references</h4><ol>' + "".join(
+                f'<li id="fn-{n}" value="{n}">{link_text(t, aid, ctx, collect, page_ed)}{back_link(n)}</li>'
+                for n, t in sorted(s["notes"].items(), key=lambda kv: int(kv[0]))) + "</ol></div>")
         tag = f"h{min(lvl + 1, 6)}"
         if lvl <= 3:
             toc.append(("chapter" if lvl == 1 else ("subchapter" if lvl == 2 else "gl3"), s["id"], (f"{label} " if label else "") + s["title"]))
@@ -575,7 +579,7 @@ def backrefs_html(aid, art_id):
         for src, sid, label in rows:
             per[src].append((sid, label))
         out = []
-        for src in sorted(per, key=ORDER.index):
+        for src in sorted(per, key=lambda x: (ACTS[x]["status"] == "repealed", ORDER.index(x))):
             s = ACTS[src]
             rep = ' <span class="tag tag-rep">repealed</span>' if s["status"] == "repealed" else ""
             prov = "".join(f'<li><a href="{act_url(src)}#{sid}">{esc(label)}</a></li>' for sid, label in per[src])
@@ -639,6 +643,7 @@ def sidebar_html(active=None):
     out.append('<div class="side-top"><a class="side-link" href="/search/">Search and filter all acts</a></div>')
     for gid, gname in A.GROUPS:
         items = [aid for aid in ORDER if ACTS[aid]["group"] == gid and ACTS[aid].get("nav", True)]
+        items.sort(key=lambda x: ACTS[x]["status"] == "repealed")          # repealed acts close their section (the sort is stable)
         if not items:
             continue
         if gid in ("law", "related"):                          # plain sections: always visible
@@ -847,6 +852,10 @@ def render_text_page(aid, ed):
     ed_note = edition_box(a, ed) + (derive_note(a, ed) if ed.get("derive") else "") + ed_note
     if ed.get("machine"):
         disc = ""
+    elif a.get("sub") == "private":
+        disc = ('<p class="disc">English text as published by the Federal Tax Authority. The FTA answers questions from individual taxpayers (private clarifications) '
+                'and publishes them in summaries. A private clarification is guidance on the facts of one case: it is not legally binding and does not change the law. '
+                'Where the guidance and the law differ, the law prevails.</p>')
     elif a.get("guide"):
         disc = ('<p class="disc">English text as published by the Federal Tax Authority. This is guidance, not legislation: it is not legally binding '
                 'and does not change the law. Where the guidance and the law differ, the law prevails.</p>')
@@ -1333,9 +1342,9 @@ def render_about():
 <ul class="rel"><li><b>Federal Decree-Law No. 47 of 2022</b> on the Taxation of Corporations and Businesses (consolidated text, with its earlier editions) and the amending Decree-Laws.</li>
 <li><b>Cabinet Decisions</b> made under the Law.</li>
 <li><b>Ministerial Decisions</b> of the Ministry of Finance made under the Law.</li>
-<li><b>Federal Tax Authority (FTA) acts</b>: FTA Decisions, the Corporate Tax Guides and Top-up Tax Guides, and the Public Clarifications.</li>
+<li><b>Federal Tax Authority (FTA) acts</b>: FTA Decisions, the Corporate Tax Guides and Top-up Tax Guides, the Public Clarifications and the compilations of Private Clarifications.</li>
 <li><b>Tax procedures</b>: the Tax Procedures Law and its Executive Regulation.</li></ul>
-<p>Ministerial Decisions and FTA acts are added in English only, as published by the Ministry of Finance (mof.gov.ae) and the Federal Tax Authority (tax.gov.ae); each act page links to the publisher's original file, and the Arabic version, where it exists, is on the publisher's website. FTA Guides and Public Clarifications are guidance: they explain how the FTA applies the law, they are not legally binding and they do not change the law. The date shown for a guide or a Public Clarification is its publication date (often only the month is known).</p>
+<p>Ministerial Decisions and FTA acts are added in English only, as published by the Ministry of Finance (mof.gov.ae) and the Federal Tax Authority (tax.gov.ae); each act page links to the publisher's original file, and the Arabic version, where it exists, is on the publisher's website. FTA Guides, Public Clarifications and Private Clarifications are guidance: they explain how the FTA applies the law, they are not legally binding and they do not change the law. A Public Clarification is addressed to all taxpayers; a Private Clarification is the FTA's answer to a question of one taxpayer, published in anonymised form in a compilation (“Summary of FTA Private Clarifications”), and is not binding on anyone else. Each compilation is a separate act; the topics of a compilation are listed under the articles of the Law that they cite (Related acts). The date shown for a guide or a clarification is its publication date (often only the month is known).</p>
 <p>The FTA lists some documents on pages that could be read only in part, so the collection of FTA acts may not be complete. Gaps that are known are listed under <a href="/pending/">Texts not yet loaded</a>.</p>
 <h2>How the texts were prepared</h2>
 <ul class="rel"><li>English texts are taken from the publications of the Ministry of Finance (mof.gov.ae) and the Federal Tax Authority (tax.gov.ae). They are unofficial translations; the Arabic text prevails. For the Law, the amending Decree-Laws and the Cabinet Decisions the Arabic original is available on its own tab; Ministerial Decisions and FTA acts are loaded in English only.</li>

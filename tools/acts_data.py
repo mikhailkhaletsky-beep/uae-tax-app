@@ -20,6 +20,7 @@ FTA_SUBS = [
     ("decision", "FTA Decisions"),
     ("guide", "FTA Guides"),
     ("clarification", "FTA Public Clarifications"),
+    ("private", "FTA Private Clarifications"),
 ]
 
 # Filter types of the search page (the FTA group is split by document type).
@@ -30,6 +31,7 @@ TYPES = [
     ("fta-decision", "FTA Decisions"),
     ("fta-guide", "FTA Guides"),
     ("fta-clarification", "FTA Public Clarifications"),
+    ("fta-private", "FTA Private Clarifications"),
     ("related", "Related: Tax Procedures"),
 ]
 

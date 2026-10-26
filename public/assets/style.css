@@ -142,6 +142,7 @@ h2.chap .chap-l{display:block;font-size:11.5px;letter-spacing:.1em;text-transfor
 .text p.cl.has-mk{padding-left:2.2em;text-indent:-2.2em}
 .cl .mk{display:inline-block;min-width:2.2em;text-indent:0;font-variant-numeric:tabular-nums}
 .cl.strong{font-weight:650}
+.text p.cl.cont{padding-left:2.2em}
 .amend{font-family:var(--sans);font-size:13px;color:var(--muted);margin:2px 0 8px;padding:5px 10px;border-left:3px solid var(--accent);background:rgba(168,121,28,.08)}
 .xref{text-decoration:none;border-bottom:1px dotted var(--link)}
 .xref:hover{background:var(--hl);border-bottom-style:solid}
@@ -270,3 +271,9 @@ table.gtab td,table.gtab th{min-width:5em}
 .gfig img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:6px;background:#fff}
 .gfig figcaption{font-size:13px;color:var(--muted);margin-top:4px}
 .toc li.gl3 a{padding-left:26px;font-size:12.5px}
+
+/* private clarifications: legal references under each topic */
+.secnotes{margin:1.4em 0 1em;padding:.7em 1em;background:var(--side);border-radius:6px;font-family:var(--sans);font-size:14px}
+.secnotes h4{margin:0 0 .4em;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.secnotes ol{margin:0;padding-left:2em}
+.secnotes li{margin:.25em 0;color:var(--ink)}

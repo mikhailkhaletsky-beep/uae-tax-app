@@ -277,6 +277,18 @@ def load_guide(act, ed):
         for sct in sections:
             normalize_blocks([sct], rules)
             normalize_blocks(sct.get("blocks", []), rules)
+    if act.get("sub") == "private":              # the footnotes are legal references: they stay under the answers they belong to
+        for s in sections:
+            ids = []
+            for b in s["blocks"]:
+                ids += [n for n in str(b.get("note", "")).split(",") if n]
+            s["notes"] = {n: g["notes"][n] for n in dict.fromkeys(ids) if n in g["notes"]}
+        arts = []
+        for s in sections:
+            plain = "\n".join(block_plain(b) for b in s["blocks"]) + "\n" + "\n".join(s["notes"].values())
+            arts.append({"id": s["id"], "num": s["num"], "title": s["title"], "text": plain})
+        return dict(act=act["id"], ed=ed["id"], pre=pre, sections=sections, notes={}, leftover={}, arts=arts,
+                    pre_text="\n".join(block_plain(b) for b in pre))
     arts = []
     for s in sections:
         plain = "\n".join(block_plain(b) for b in s["blocks"])

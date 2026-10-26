@@ -160,9 +160,10 @@ def page_words(page, cfg):
     return out
 
 
-def cluster_lines(words, body):
+def cluster_lines(words, body, marker_max=None):
     """Group words by baseline; raised small numbers become footnote markers of the line they sit on."""
-    main = [w for w in words if not (re.fullmatch(r"\d{1,3}(?:[,–-]\d{1,3})*", w["text"]) and w["size"] <= body * 0.8)]
+    marker_max = marker_max or body * 0.8
+    main = [w for w in words if not (re.fullmatch(r"\d{1,3}(?:[,–-]\d{1,3})*", w["text"]) and w["size"] <= marker_max)]
     small = [w for w in words if w not in main]
     rows = []
     for w in sorted(main, key=lambda w: (w["bottom"], w["x0"])):
@@ -225,7 +226,7 @@ class Doc:
             boxes = self.find_boxes(page)
             if self.cfg.get("qbox"):
                 qbox_numbers(ws, boxes)
-            lines = [Line(pi + 1, wl) for wl in cluster_lines(ws, self.body)]
+            lines = [Line(pi + 1, wl) for wl in cluster_lines(ws, self.body, self.cfg.get("marker_max"))]
             info = dict(lines=lines, H=page.height, W=page.width, tables=[], boxes=[])
             info["boxes"] = boxes
             info["tables"] = self.find_tables(page, info["boxes"])
@@ -253,6 +254,8 @@ class Doc:
             col = r.get("non_stroking_color")
             if not r.get("fill") or col is None:
                 continue
+            if not isinstance(col, (int, float)) and not all(isinstance(x, (int, float)) for x in col):
+                continue                    # pattern / named colours
             c = col if isinstance(col, (int, float)) else (col[0] if len(col) == 1 else None)
             if len(col) == 3 if hasattr(col, "__len__") else False:
                 if max(col) - min(col) < 0.03:
@@ -503,7 +506,130 @@ class Builder:
             return (2, None, l.x0)
         return None
 
+    def build_pc(self):
+        """Summary of FTA Private Clarifications: topic headings, then Q / A paragraphs with page footnotes numbered through the document."""
+        d = self.d
+        blocks, notes = [], {}
+        cur = None
+        counter = 0
+        started = False
+
+        def flush():
+            nonlocal cur
+            if not cur:
+                return
+            text = " ".join(cur["parts"])
+            ids = []
+            for m in MARK.finditer(text):
+                ids += note_ids(m.group(1))
+            text = MARK.sub("", text)
+            text = re.sub(r"\s+([,.;:)?!])", r"\1", text)
+            text = re.sub(r"\bI n\b", "In", text)             # kerning gap in the source text layer
+            text = clean(text)
+            if text.replace(B_ON, "").replace(B_OFF, "").strip():
+                b = dict(kind="p", text=text, level=cur.get("level", 0), marker=cur["marker"], page=cur["page"])
+                if cur["marker"] == "Q":
+                    b["strong"] = True
+                if cur["marker"] is None and blocks and blocks[-1]["kind"] == "p":
+                    b["cont"] = True                       # a further paragraph of the same question or answer
+                if ids:
+                    b["note"] = ",".join(dict.fromkeys(ids))
+                blocks.append(b)
+            cur = None
+
+        for p in d.pages:
+            lines = list(p["lines"])
+            if not lines:
+                continue
+            # page number at the foot
+            if lines[-1].text.strip().isdigit() and lines[-1].top > p["H"] - 70:
+                lines.pop()
+            # footnote zone: from the first small line that starts with a marker in the lower part of the page
+            zone = next((k for k, l in enumerate(lines) if l.top > p["H"] * 0.4 and MARK1.match(l.text)), None)
+            if zone is not None:
+                curn = None
+                for l in lines[zone:]:
+                    m = MARK1.match(l.text)
+                    if m:
+                        curn = m.group(1)
+                        notes[curn] = clean(l.text[m.end():])
+                    elif curn:
+                        if re.match(r"Article\s", l.text) and re.search(r"\b(?:19|20)\d\d$", notes[curn]) and str(int(curn) + 1) not in notes:
+                            curn = str(int(curn) + 1)        # a note whose number is missing in the source
+                            notes[curn] = clean(l.text)
+                        else:
+                            notes[curn] += " " + clean(l.text)
+                lines = lines[:zone]
+            prev = None
+            for l in lines:
+                txt = re.sub(r"⟦[\d,–-]+⟧", "", l.text).strip()
+                if not txt:
+                    continue
+                if l.bold and 12.4 <= l.size <= 14.5:                  # topic heading
+                    started = True
+                    if prev is not None and prev[0] == "h" and prev[1].page == l.page and l.top - prev[1].bottom < 6:
+                        blocks[-1]["title"] += " " + clean(txt)
+                    else:
+                        flush()
+                        counter += 1
+                        blocks.append(dict(kind="heading", lvl=1, num=str(counter), title=clean(txt), page=l.page, literal=False, nonum=True))
+                    prev = ("h", l)
+                    continue
+                if not started:
+                    continue
+                first = l.words[0]
+                gap_before = cur is not None and (cur["last"].page != l.page or l.top - cur["last"].top > 1.3 * d.pitch)
+                is_qa = first["text"] in ("Q", "A") and not first.get("marker") and len(l.words) > 1 and (
+                    (first["bold"] and (not l.words[1]["bold"] or l.words[1]["text"] == "I"))
+                    or (first["text"] == "A" and cur is not None and cur["marker"] == "Q" and gap_before))     # an "A" that lost its bold in the source
+                if is_qa:
+                    flush()
+                    ws = l.words[1:]
+                    rich = Line.make_text(ws, inline=True) if ws else ""
+                    cur = dict(parts=[rich], marker=first["text"], page=l.page, last=l)
+                    prev = ("p", l)
+                    continue
+                mk = self.marker_of(l)
+                if mk:                                               # list item inside an answer
+                    flush()
+                    ws = [w for w in l.words if not w.get("marker")][1:]
+                    rest = [w for w in l.words if w.get("marker") or w in ws]
+                    cur = dict(parts=[Line.make_text(rest, inline=True)], marker=mk, level=1, page=l.page, last=l)
+                    prev = ("p", l)
+                    continue
+                if cur is None:
+                    cur = dict(parts=[], marker=None, page=l.page, last=l)
+                    cur["parts"].append(l.rich)
+                    prev = ("p", l)
+                    continue
+                pl = cur["last"]
+                if pl.page == l.page:
+                    newpar = l.top - pl.top > 1.3 * d.pitch
+                else:       # across a page break: continue only when the paragraph looks unfinished
+                    newpar = bool(re.search(r"[.?!:”\")]\s*(?:⟦[\d,–-]+⟧)*$", pl.text)) and l.text[:1].isupper()
+                if newpar:
+                    flush()
+                    cur = dict(parts=[l.rich], marker=None, page=l.page, last=l)
+                else:
+                    cur["parts"].append(l.rich)
+                cur["last"] = l
+                prev = ("p", l)
+        flush()
+        fixed = {}
+        for n, t in notes.items():                   # a number glued to the end of the line above starts the next note
+            parts = re.split(r"⟦(\d{1,3})⟧", t)
+            fixed[n] = clean(parts[0])
+            for k in range(1, len(parts), 2):
+                fixed[parts[k]] = clean(parts[k + 1])
+        self.notes = dict(sorted(fixed.items(), key=lambda kv: int(kv[0])))
+        while blocks and blocks[-1]["kind"] == "p" and re.fullmatch(r"Thank you!?", blocks[-1]["text"], re.I):
+            blocks.pop()
+        self.blocks = blocks
+        return blocks
+
     def build(self):
+        if self.cfg.get("style") == "pc":
+            return self.build_pc()
         d = self.d
         self.strip_noise()
         self.find_toc()

@@ -93,6 +93,20 @@ GUIDES = [
     ("TTGEIE1", "2026-08-25", "Top-up Tax: Excluded Entities", T_TOP, "Excluded Entities and Investment Entities", "Top-up Tax Guide"),
 ]
 
+# --------------------------------------------------------------------------------------------- Private Clarifications
+# The FTA publishes its answers to individual taxpayers as compilations ("Summary of FTA Private Clarifications").
+# TO ADD A NEW COMPILATION:
+#   1. put the PDF in sources/pdf/FTAP-<key>_EN-FTA.pdf and its web address in sources/urls.json under the key FTAP-<key>_EN-FTA;
+#   2. add one row below: (key, issued, "covers clarifications issued up to", official title);
+#   3. run  python3 tools/parse_guides.py FTAP-<key>_EN-FTA -f , then qa.py and build.py (see README).
+# Each compilation is a separate act in the sidebar section "FTA Private Clarifications"; the Q&A are split by topic and every legal
+# reference in the footnotes becomes a link, so the topic appears under the Law article (or Decision article) it cites in "Related acts".
+PRIVATE = [
+    ("2026-05", "2026-07", "May 2026", "Corporate Tax – Summary of FTA Private Clarifications issued up to May 2026"),
+]
+PRIVATE_TOPICS = [T_EXE, T_FZ, T_INV, T_INC, T_REL, T_ACC]
+PRIVATE_CFG = dict(style="pc", marker_max=7.6)
+
 # --------------------------------------------------------------------------------------------- Public Clarifications
 # (no, issued, sidebar name, topic, official title)
 CLARIFICATIONS = [
@@ -181,6 +195,15 @@ def build():
             name=name, subject=title, title=f"Public Clarification {code}: {title}", topics=[topic], status="in_force", status_label="Current",
             issued=issued, effective="", en_only=True, guide=True,
             editions=[_edition(f"{code}_EN-FTA", issued, fmt="guide", gcfg=dict(GP.CLAR_CFG))],
+        )
+        acts.append(a)
+    for key, issued, upto, title in PRIVATE:
+        a = dict(
+            id=f"FTAP-{key}", slug=f"private-clarifications-{key}", group="fta", sub="private",
+            short=f"FTA Private Clarifications (up to {upto})", code=f"PC-{key}", numlabel=f"Issued up to {upto}",
+            name="Summary of Private Clarifications", subject=f"Questions and answers on Corporate Tax, issued up to {upto}", title=title,
+            topics=list(PRIVATE_TOPICS), status="in_force", status_label="Current", issued=issued, effective="", en_only=True, guide=True,
+            editions=[_edition(f"FTAP-{key}_EN-FTA", issued, fmt="guide", gcfg=dict(PRIVATE_CFG))],
         )
         acts.append(a)
     return acts
