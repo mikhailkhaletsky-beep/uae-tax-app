@@ -131,6 +131,8 @@ CLARIFICATIONS = [
      "Downward adjustments made by a Taxable Person in the Tax Return to comply with the Corporate Tax Law"),
     (12, "2026-07-30", "AT1 instruments of banks", T_INC,
      "Corporate Tax treatment of payments made in respect of Additional Tier 1 instruments by banks"),
+    ("TAXP010", "2026-10-02", "Free Zones and Designated Zones (CT, VAT, Excise)", T_FZ,
+     "Free Zones and Designated Zones for Tax Purposes"),
 ]
 
 PUBLISHER = "Federal Tax Authority"
@@ -189,7 +191,7 @@ def build():
         )
         acts.append(a)
     for no, issued, name, topic, title in CLARIFICATIONS:
-        code = f"CTP{no:03d}"
+        code = no if isinstance(no, str) else f"CTP{no:03d}"     # TAXP010 is a Tax Public Clarification (CT, VAT, Excise)
         a = dict(
             id=f"FTAC-{code}", slug=code.lower(), group="fta", sub="clarification", short=f"Public Clarification {code}", code=code, numlabel=code,
             name=name, subject=title, title=f"Public Clarification {code}: {title}", topics=[topic], status="in_force", status_label="Current",
