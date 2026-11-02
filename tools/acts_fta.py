@@ -135,6 +135,17 @@ CLARIFICATIONS = [
      "Free Zones and Designated Zones for Tax Purposes"),
 ]
 
+# --------------------------------------------------------------------------------------------- Tax Bulletins
+# "Basic Tax Information Bulletin" (short Q&A leaflets, category "Business Bulletins" on tax.gov.ae); they have no code.
+# (key, issued, sidebar name, topic, official title, {Law article: label} the bulletin is linked from in "Related acts"
+#  in addition to the articles its text cites)
+BULLETINS = [
+    ("CTTB-LOSS", "2026-06-25", "Corporate Tax Losses", T_INC, "Basic Tax Information Bulletin: Corporate Tax Losses",
+     {"37": "Tax Losses", "38": "Tax Losses", "39": "Tax Losses"}),
+    ("CTTB-SBR", "2026-07-30", "Small Business", T_REL, "Basic Tax Information Bulletin: Small Business",
+     {"21": "Small Business Relief"}),
+]
+
 PUBLISHER = "Federal Tax Authority"
 
 
@@ -197,6 +208,14 @@ def build():
             name=name, subject=title, title=f"Public Clarification {code}: {title}", topics=[topic], status="in_force", status_label="Current",
             issued=issued, effective="", en_only=True, guide=True,
             editions=[_edition(f"{code}_EN-FTA", issued, fmt="guide", gcfg=dict(GP.CLAR_CFG))],
+        )
+        acts.append(a)
+    for key, issued, name, topic, title, links in BULLETINS:
+        a = dict(
+            id=f"FTAB-{key}", slug=key.lower(), group="fta", sub="bulletin", short=f"Tax Bulletin: {name}", numlabel="Bulletin",
+            name=name, subject=title, title=title, topics=[topic], status="in_force", status_label="Current",
+            issued=issued, effective="", en_only=True, guide=True, law_links=links,
+            editions=[_edition(f"{key}_EN-FTA", issued, fmt="guide", gcfg=dict(GP.BULLETIN_CFG))],
         )
         acts.append(a)
     for key, issued, upto, title in PRIVATE:

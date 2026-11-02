@@ -562,6 +562,14 @@ for aid in ORDER:
         RENDER[(aid, ed["id"])] = (h, toc)
 
 
+# Law articles that a bulletin is linked from even when its text does not cite them (law_links of the act), once per article
+for _aid in ORDER:
+    for _num, _label in ACTS[_aid].get("law_links", {}).items():
+        _art = ARTS.get("L-01", {}).get(_num)
+        if _art and not any(x[0] == _aid for x in BACK["L-01"][_art[0]]):
+            BACK["L-01"][_art[0]].append((_aid, "", _label))
+
+
 def num_label(a):
     """Short act number for the sidebar: "FDL 47/2022", "CD 116/2022", "MD 134/2023" ..."""
     if a.get("numlabel"):

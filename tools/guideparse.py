@@ -41,6 +41,7 @@ RE_LITNUM = re.compile(r"^(\d{1,2}(?:\.\d{1,2}){0,4})\.?$")
 
 
 # Public Clarifications are bilingual (English left, Arabic right); the English half only, unnumbered headings
+BULLETIN_CFG = dict(style="bulletin", marker_max=8.6)
 CLAR_CFG = dict(xmax=0.505, skipfont=("Arial", "Arabic"), style="clar", ftr=30)
 
 
@@ -627,9 +628,181 @@ class Builder:
         self.blocks = blocks
         return blocks
 
+    def build_bulletin(self):
+        """Basic Tax Information Bulletin: a cover page, then numbered questions (large bold headings) with short answers, tables
+        and footnotes that sit at the foot of the page (number in a larger font than the text)."""
+        d = self.d
+        blocks, notes = [], {}
+        cur = None
+        counter = 0
+        uid = {}
+
+        def flush():
+            nonlocal cur
+            if not cur:
+                return
+            text = clean(" ".join(cur["parts"]))
+            ids = []
+            for m in MARK.finditer(text):
+                for n in note_ids(m.group(1)):
+                    if (cur["page"], n) in uid:
+                        ids.append(uid[(cur["page"], n)])
+            text = clean(re.sub(r"\s+([,.;:)?!])", r"\1", MARK.sub("", text)))
+            if text.replace(B_ON, "").replace(B_OFF, "").strip():
+                b = dict(kind="p", text=text, level=cur["level"], marker=cur["marker"], page=cur["page"])
+                if ids:
+                    b["note"] = ",".join(dict.fromkeys(ids))
+                blocks.append(b)
+            cur = None
+
+        pdf = pdfplumber.open(d.path)
+        tb = None                       # a table without ruling lines (header "No. / Applicable condition / Explanation"): collected word by word
+        HEAD = {"Applicable", "condition", "to", "the", "Taxable", "Person", "No.", "Explanation"}
+
+        def close_table():
+            nonlocal tb
+            if not tb:
+                return
+            nums = sorted((w["top"], w["text"]) for w in tb["words"] if w["col"] == 0 and w["text"].isdigit())
+            rows = {n: ["", "", ""] for _, n in nums}
+            order = []
+            for w in sorted(tb["words"], key=lambda w: (w["page"], w["top"], w["x0"])):
+                if w["head"]:
+                    continue
+                if w["col"] == 0 and w["text"].isdigit():
+                    rows[w["text"]][0] = w["text"]
+                    order.append(w["text"])
+                    continue
+                own = [n for t, n in nums if t <= w["top"] + 12] if w["page"] == nums[0][0] or True else []
+                if own:
+                    cell = rows[own[-1]]
+                    cell[w["col"]] = (cell[w["col"]] + " " + w["text"]).strip()
+            flush()
+            blocks.append(dict(kind="table", rows=[["No.", "Applicable condition to the Taxable Person", "Explanation"]] + [rows[n] for n in order],
+                               hdr=1, page=tb["page"]))
+            tb = None
+
+        for pi, p in enumerate(d.pages):
+            if pi == 0:
+                continue                                              # cover page
+            H = p["H"]
+            lines = [l for l in p["lines"] if not in_table(l, p["tables"])]
+            # footnotes: text smaller than the body in the lower part of the page; each starts with its number (a larger digit at the left)
+            zone = [l for l in lines if l.top > H * 0.8 and any(
+                w["size"] <= d.body - 1.5 and w["size"] >= 8.5 for w in l.words if not w.get("marker"))]
+            if zone:
+                allw = [w for l in zone for w in l.words]
+                txtsz = collections.Counter(round(w["size"]) for w in allw if not w.get("marker") and not w["text"].isdigit()).most_common(1)
+                txtsz = txtsz[0][0] if txtsz else 9
+
+                def is_num(w):
+                    return w["text"].isdigit() and w["x0"] < 70 and (w.get("marker") or abs(w["size"] - txtsz) > 1.5)
+                zw = sorted(allw, key=lambda w: (w["top"], w["x0"]))
+                starts = sorted((w["top"], w["text"]) for w in zw if is_num(w))
+                parts = {n: [] for _, n in starts}
+                for w in zw:
+                    if is_num(w):
+                        continue
+                    own = [n for t, n in starts if t <= w["top"] + 2]
+                    if own:
+                        parts[own[-1]].append(w["text"])
+                for n, ws in parts.items():
+                    uid[(pi + 1, n)] = str(len(notes) + 1)
+                    notes[uid[(pi + 1, n)]] = clean(" ".join(ws))
+                zs = {id(l) for l in zone}
+                lines = [l for l in lines if id(l) not in zs]
+            items = [(l.top, "line", l) for l in lines] + [(t["bbox"][1], "table", t) for t in p["tables"]]
+            items.sort(key=lambda it: it[0])
+            prev_head = None
+            tabs = pdf.pages[pi].find_tables() if p["tables"] else []
+            for top, kind, obj in items:
+                if kind == "table":
+                    flush()
+                    rows = obj["rows"]
+                    for t in tabs:                                       # read again with a tolerance that keeps the spaces between words
+                        if all(abs(x - y) < 1 for x, y in zip(t.bbox, obj["bbox"])):
+                            rows = t.extract(x_tolerance=1.5)
+                    rows = [[clean((c or "").replace("\n", " ")) for c in r] for r in rows]
+                    if blocks and blocks[-1]["kind"] == "table" and blocks[-1]["page"] == pi and len(blocks[-1]["rows"][0]) == len(rows[0]) \
+                            and top < 150:
+                        if rows and blocks[-1]["rows"][0] == rows[0]:
+                            rows = rows[1:]
+                        blocks[-1]["rows"] += rows
+                        blocks[-1]["page"] = pi + 1
+                    else:
+                        blocks.append(dict(kind="table", rows=rows, hdr=1, page=pi + 1))
+                    prev_head = None
+                    continue
+                l = obj
+                lw = [w for w in l.words if not w.get("marker")]
+                if tb is None and any(w["text"] == "Explanation" for w in lw):
+                    flush()
+                    tb = dict(words=[], page=l.page, headdone=False)
+                if tb is not None:
+                    if l.x0 < 50 and not lw[0]["text"].isdigit():              # text below the table
+                        tb["page_end"] = l.page
+                        close_table()
+                    else:
+                        allhead = all(w["text"] in HEAD for w in lw)
+                        if not allhead:
+                            tb["headdone"] = True
+                        head = allhead and (not tb["headdone"] or l.top < 125)
+                        for w in lw:
+                            col = 0 if w["x0"] < 100 else (1 if w["x0"] < 270 else 2)
+                            tb["words"].append(dict(page=l.page, top=w["top"] + (l.page - tb["page"]) * 1000, x0=w["x0"], text=w["text"], col=col, head=head))
+                        continue
+                if len(lw) == 1 and lw[0]["text"].isdigit() and lw[0]["size"] <= max(self.cfg.get("marker_max", 8.6), 0.66 * d.body) and cur is not None:
+                    cur["parts"].append("\u27e6" + lw[0]["text"] + "\u27e7")      # a footnote mark that sits between two lines
+                    continue
+                big = [w for w in l.words if not w.get("marker") and w["size"] >= d.body + 3 and w["bold"]]
+                if big:
+                    title = clean(" ".join(w["text"] for w in big if not (w["text"].isdigit() and w["x0"] < 60)))
+                    if not title:
+                        continue                                       # the question number standing alone
+                    if prev_head is not None and prev_head.page == l.page and l.top - prev_head.bottom < 30:
+                        blocks[-1]["title"] += " " + title
+                    else:
+                        flush()
+                        counter += 1
+                        blocks.append(dict(kind="heading", lvl=1, num=str(counter), title=title, page=l.page, literal=True))
+                    prev_head = l
+                    continue
+                prev_head = None
+                words = [w for w in l.words if not w.get("marker")]
+                if not words:
+                    continue
+                w0 = words[0]["text"]
+                if w0 in ("•", "-", "–") and len(words) > 1:
+                    flush()
+                    rest = [w for w in l.words if w.get("marker") or w is not words[0]]
+                    cur = dict(parts=[Line.make_text(rest, inline=True)], marker="•", level=0, page=l.page, last=l)
+                    continue
+                if cur is None:
+                    cur = dict(parts=[l.rich], marker="", level=0, page=l.page, last=l)
+                    continue
+                pl = cur["last"]
+                if pl.page == l.page:
+                    newpar = l.top - pl.top > 1.3 * d.pitch
+                else:
+                    newpar = bool(re.search(r"[.?!:”\")]\s*(?:⟦[\d,–-]+⟧)*$", pl.text)) and l.text[:1].isupper()
+                if newpar:
+                    flush()
+                    cur = dict(parts=[l.rich], marker="", level=0, page=l.page, last=l)
+                else:
+                    cur["parts"].append(l.rich)
+                    cur["last"] = l
+        close_table()
+        flush()
+        pdf.close()
+        self.notes = notes
+        self.blocks = blocks
+        return blocks
+
     def build(self):
         if self.cfg.get("style") == "pc":
             return self.build_pc()
+        if self.cfg.get("style") == "bulletin":
+            return self.build_bulletin()
         d = self.d
         self.strip_noise()
         self.find_toc()

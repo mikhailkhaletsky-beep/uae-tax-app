@@ -20,6 +20,7 @@ FTA_SUBS = [
     ("decision", "FTA Decisions"),
     ("guide", "FTA Guides"),
     ("clarification", "FTA Public Clarifications"),
+    ("bulletin", "FTA Tax Bulletin"),
     ("private", "FTA Private Clarifications"),
 ]
 
@@ -31,6 +32,7 @@ TYPES = [
     ("fta-decision", "FTA Decisions"),
     ("fta-guide", "FTA Guides"),
     ("fta-clarification", "FTA Public Clarifications"),
+    ("fta-bulletin", "FTA Tax Bulletin"),
     ("fta-private", "FTA Private Clarifications"),
     ("related", "Related: Tax Procedures"),
 ]
