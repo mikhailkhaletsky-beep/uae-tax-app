@@ -146,6 +146,13 @@ BULLETINS = [
      {"21": "Small Business Relief"}),
 ]
 
+# --------------------------------------------------------------------------------------------- Tax Procedures Guides
+# FTA guides on tax procedures (not Corporate Tax only); shown in the section "Related: Tax Procedures".
+# (cover code, issued, sidebar name, official title)
+TP_GUIDES = [
+    ("TPGTR1", "2024-10", "Tax Resident and Tax Residency Certificate", "Tax Resident and Tax Residency Certificate"),
+]
+
 PUBLISHER = "Federal Tax Authority"
 
 
@@ -199,6 +206,14 @@ def build():
             name=name, subject=title, title=f"{family} {code}: {title}", topics=[topic], status="in_force", status_label="Current",
             issued=issued, effective="", en_only=True, guide=True,
             editions=[_edition(f"{code}_EN-FTA", issued, fmt="guide", gcfg=(dict(qbox=True) if code == "CTGTXR1" else None))],
+        )
+        acts.append(a)
+    for code, issued, name, title in TP_GUIDES:
+        a = dict(
+            id=f"FTAG-{code}", slug=code.lower(), group="related", short=f"Tax Procedures Guide {code}", code=code, numlabel=code,
+            name=name, subject=title, title=f"Tax Procedures Guide {code}: {title}", topics=[T_RES, T_PEN], status="in_force",
+            status_label="Current", issued=issued, effective="", en_only=True, guide=True,
+            editions=[_edition(f"{code}_EN-FTA", issued, fmt="guide")],
         )
         acts.append(a)
     for no, issued, name, topic, title in CLARIFICATIONS:
