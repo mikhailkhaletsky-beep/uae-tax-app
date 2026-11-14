@@ -141,6 +141,31 @@ def clean(s):
     return re.sub(r"[ \t]+", " ", s).strip()
 
 
+_HY_END = re.compile(r"[A-Za-z][-\u2010][\ue000-\ue00f]*$")
+_HY_NEXT = re.compile(r"[\ue000-\ue00f]*(?!(?:and|or)\b)[A-Za-z0-9]", re.I)
+
+
+def glue(a, b):
+    """Joins two lines of one text with a space, but not after a hyphen that ends a line: that is the hyphen of the word (Non-/Resident)."""
+    if not a:
+        return b
+    if not b:
+        return a
+    return a + b if _HY_END.search(a) and _HY_NEXT.match(b) else a + " " + b
+
+
+def cell_lines(c):
+    """The lines of a table cell as one text (see glue)."""
+    return glue_all((c or "").split("\n"))
+
+
+def glue_all(parts):
+    out = ""
+    for p in parts:
+        out = glue(out, p)
+    return out
+
+
 def page_words(page, cfg):
     W = page.width
     ws = page.extract_words(extra_attrs=["fontname", "size", "non_stroking_color"], x_tolerance=1.5, y_tolerance=2,
@@ -635,7 +660,7 @@ class Builder:
             nonlocal cur
             if not cur:
                 return
-            text = " ".join(cur["parts"])
+            text = glue_all(cur["parts"])
             ids = []
             for m in MARK.finditer(text):
                 ids += note_ids(m.group(1))
@@ -757,7 +782,7 @@ class Builder:
             nonlocal cur
             if not cur:
                 return
-            text = clean(" ".join(cur["parts"]))
+            text = clean(glue_all(cur["parts"]))
             ids = []
             for m in MARK.finditer(text):
                 for n in note_ids(m.group(1)):
@@ -824,7 +849,7 @@ class Builder:
                         parts[own[-1]].append(w["text"])
                 for n, ws in parts.items():
                     uid[(pi + 1, n)] = str(len(notes) + 1)
-                    notes[uid[(pi + 1, n)]] = clean(" ".join(ws))
+                    notes[uid[(pi + 1, n)]] = clean(glue_all(ws))
                 zs = {id(l) for l in zone}
                 lines = [l for l in lines if id(l) not in zs]
             items = [(l.top, "line", l) for l in lines] + [(t["bbox"][1], "table", t) for t in p["tables"]]
@@ -838,7 +863,7 @@ class Builder:
                     for t in tabs:                                       # read again with a tolerance that keeps the spaces between words
                         if all(abs(x - y) < 1 for x, y in zip(t.bbox, obj["bbox"])):
                             rows = t.extract(x_tolerance=1.5)
-                    rows = [[clean((c or "").replace("\n", " ")) for c in r] for r in rows]
+                    rows = [[clean(cell_lines(c)) for c in r] for r in rows]
                     if blocks and blocks[-1]["kind"] == "table" and blocks[-1]["page"] == pi and len(blocks[-1]["rows"][0]) == len(rows[0]) \
                             and top < 150:
                         if rows and blocks[-1]["rows"][0] == rows[0]:
@@ -1042,7 +1067,7 @@ class Builder:
             nonlocal cur
             if not cur:
                 return
-            text = clean(" ".join(cur["parts"]))
+            text = clean(glue_all(cur["parts"]))
             text = re.sub(r"(\S)- (?=[a-z])", r"\1-", text) if False else text
             notes = []
             for m in MARK.finditer(text):
@@ -1097,7 +1122,7 @@ class Builder:
                 flush()
                 prev_line = None
                 if obj.get("keepnl"):
-                    rows = [[clean(re.sub(r"\n(?=•)", "\u23ce", c or "").replace("\n", " ")) for c in r] for r in obj["rows"]]
+                    rows = [[clean(cell_lines(re.sub(r"\n(?=•)", "\u23ce", c or ""))) for c in r] for r in obj["rows"]]
                     rows = [[self.cell_notes(c, pi + 1) for c in r] for r in rows]
                     tb_box = box_of(pi)
                     if out and out[-1]["kind"] == "table" and out[-1]["page"] == pi - 1 and len(out[-1]["rows"][0]) == len(rows[0]) and top < 150:
@@ -1120,7 +1145,7 @@ class Builder:
                         out.append(dict(kind="table", rows=rows, hdr=1, page=pi, box=tb_box, bp=pi + 1))
                     keep_box = True
                     continue
-                rows = [[clean((c or "").replace("\n", " ")) for c in r] for r in obj["rows"]]
+                rows = [[clean(cell_lines(c)) for c in r] for r in obj["rows"]]
                 if out and out[-1]["kind"] == "table" and out[-1]["page"] == pi and False:
                     pass
                 if out and out[-1]["kind"] == "table" and out[-1]["page"] == pi - 1 and len(out[-1]["rows"][0]) == len(rows[0]) \
@@ -1161,7 +1186,7 @@ class Builder:
                         and (l.bold or l.ital) and l.size == heading_state["last"].size and not lit \
                         and l.x0 >= (d.margin if forced is None else min(heading_state["tx"], d.margin + 12)) - 4 \
                         and (heading_state["hl"] == lvl or forced is None):
-                    heading_state["title"] += " " + clean(re.sub(r"⟦\d+⟧", "", l.text))
+                    heading_state["title"] = glue(heading_state["title"], clean(re.sub(r"⟦\d+⟧", "", l.text)))
                     heading_state["last"] = l
                     out[heading_state["idx"]]["title"] = heading_state["title"]
                     continue
@@ -1209,7 +1234,7 @@ class Builder:
                     and l.bold and l.size == heading_state["last"].size and 0 <= l.top - heading_state["last"].bottom < 0.9 * l.size \
                     and l.x0 >= d.margin - 4 and not heading_state["title"].rstrip().endswith((".", ":", "?")):
                 # a heading wrapped onto bold lines the bookmark title (or the number scan) did not cover
-                heading_state["title"] += " " + clean(re.sub(r"⟦\d+⟧", "", l.text))
+                heading_state["title"] = glue(heading_state["title"], clean(re.sub(r"⟦\d+⟧", "", l.text)))
                 heading_state["last"] = l
                 out[heading_state["idx"]]["title"] = heading_state["title"]
                 continue
