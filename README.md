@@ -15,9 +15,13 @@ Static website: no server, no database, no build step on the host. The finished 
 - Cabinet Decisions made under the Law (17 acts).
 - Ministerial Decisions of the Ministry of Finance (34 acts, English only; `tools/acts_mof.py`).
 - Federal Tax Authority acts (English only; `tools/acts_fta.py`): FTA Decisions (14 loaded, No. 16 of 2023 listed as pending),
-  22 guides (Corporate Tax Guides and Top-up Tax Guides) and 12 Public Clarifications (CTP001-CTP012). Guides and Public Clarifications are
+  23 guides (Corporate Tax Guides and Top-up Tax Guides) and 12 Public Clarifications (CTP001-CTP012). Guides and Public Clarifications are
   parsed from the PDF layout by `tools/guideparse.py` into headings, paragraphs, tables and footnotes; the result is cached in
-  `sources/parsed/` (`python3 tools/parse_guides.py -f` makes the caches again, a few minutes).
+  `sources/parsed/` (`python3 tools/parse_guides.py -f` makes the caches again, a few minutes; `python3 tools/parse_guides.py CTGFSI1_EN-FTA -f`
+  makes one). A guide with an unusual layout gets its own settings in `GUIDE_CFG` in `tools/acts_fta.py`: `qbox` (question boxes), `boxtables`
+  (tables drawn inside shaded Example boxes, footnotes in cells included), `figs` (drawings the text cannot express are cut out of the PDF page
+  as pictures in `site/img/`, with a text version under each) and `fixes` (a few words of the PDF replaced where its layout cannot be read,
+  e.g. a formula written as a fraction). Settings are read only for that guide, so the other guides are parsed as before.
 - FTA Private Clarifications (sub-folder of FTA acts): compilations "Summary of FTA Private Clarifications" published by the FTA, one act per
   compilation, listed in `PRIVATE` in `tools/acts_fta.py` (1 loaded: issued up to May 2026; 28 topics, 85 questions and answers, 129 notes).
   Each topic is a section of the act; the Related acts widget under an article of the Law links to the topic that cites it

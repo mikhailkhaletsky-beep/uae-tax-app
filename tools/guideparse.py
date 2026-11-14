@@ -231,6 +231,12 @@ class Doc:
             info = dict(lines=lines, H=page.height, W=page.width, tables=[], boxes=[])
             info["boxes"] = boxes
             info["tables"] = self.find_tables(page, info["boxes"])
+            if self.cfg.get("boxtables"):
+                info["tables"] += self.find_box_tables(page, info["boxes"])
+            info["figs"] = [f for f in self.cfg.get("figs", []) if f["page"] == pi + 1]
+            for f in info["figs"]:                      # a drawing that is shown as a picture: the text lines inside it are dropped
+                x0, t0, x1, b0 = f["bbox"]
+                info["lines"] = [l for l in info["lines"] if not (t0 - 1 <= (l.top + l.bottom) / 2 <= b0 + 1 and x0 - 3 <= (l.x0 + l.x1) / 2 <= x1 + 3)]
             self.pages.append(info)
         pdf.close()
         xs = collections.Counter(round(l.x0) for p in self.pages for l in p["lines"] if abs(l.size - self.body) < 0.6 and len(l.text) > 40)
@@ -270,6 +276,87 @@ class Doc:
         out = [b for b in out if not any(o is not b and o[0] <= b[0] + 1 and o[1] <= b[1] + 1 and o[2] >= b[2] - 1 and o[3] >= b[3] - 1 and o != b for o in out)]
         return sorted(set(out), key=lambda b: b[1])
 
+    def find_box_tables(self, page, boxes):
+        """Tables drawn inside a shaded box (Example boxes of the guides): the cell borders are thin black rectangles, the cells are grey
+        like the box, so the usual table finder sees one big table. The borders are grouped into tables and read with explicit lines."""
+        def dark(col):
+            if col is None:
+                return False
+            if isinstance(col, (int, float)):
+                return col < 0.2
+            return all(isinstance(x, (int, float)) and x < 0.2 for x in col)
+        hs, vs = [], []
+        for r in page.rects:
+            if not r.get("fill") or not dark(r.get("non_stroking_color")):
+                continue
+            w, h = r["x1"] - r["x0"], r["bottom"] - r["top"]
+            if h <= 2.5 and w >= 12:
+                hs.append(r)
+            elif w <= 2.5 and h >= 6:
+                vs.append(r)
+        res = []
+        for b in boxes:
+            def frame_v(r):                                  # the black frame of the box itself
+                xc = (r["x0"] + r["x1"]) / 2
+                return abs(xc - b[0]) <= 2.5 or abs(xc - b[2]) <= 2.5
+            bv = sorted([r for r in vs if r["x0"] >= b[0] - 1 and r["x1"] <= b[2] + 1 and r["top"] >= b[1] - 1 and r["bottom"] <= b[3] + 1
+                         and not frame_v(r)], key=lambda r: r["top"])
+            groups = []
+            for r in bv:
+                if groups and r["top"] <= groups[-1][1] + 5:
+                    groups[-1][1] = max(groups[-1][1], r["bottom"])
+                    groups[-1][2].append(r)
+                else:
+                    groups.append([r["top"], r["bottom"], [r]])
+            for top, bot, members in groups:
+                xs = sorted(set(round((r["x0"] + r["x1"]) / 2, 1) for r in members))
+                cx = []
+                for x in xs:
+                    if not cx or x - cx[-1] > 2.5:
+                        cx.append(x)
+                if len(cx) < 3:
+                    continue
+                x0, x1 = cx[0], cx[-1]
+                hh = [r for r in hs if top - 5 <= r["top"] <= bot + 5 and r["x0"] >= x0 - 3 and r["x1"] <= x1 + 3
+                      and not (r["x0"] <= b[0] + 1.5 and r["x1"] >= b[2] - 1.5)]
+                cy = []                                          # a row border is drawn cell by cell: the pieces on one level must cover most of the width
+                for y in sorted(set(round((r["top"] + r["bottom"]) / 2, 1) for r in hh)):
+                    if not cy or y - cy[-1][0] > 2.5:
+                        cy.append([y, 0.0])
+                    cy[-1][1] += sum(r["x1"] - r["x0"] for r in hh if abs((r["top"] + r["bottom"]) / 2 - y) < 0.05)
+                cy = [y for y, cov in cy if cov >= 0.7 * (x1 - x0)]
+                if len(cy) < 2 or len(cx) < 3:
+                    continue
+                try:
+                    tb = page.crop((max(0, x0 - 2), max(0, cy[0] - 2), min(page.width, x1 + 2), min(page.height, cy[-1] + 2)))
+                    # raised small numbers are footnote markers: they are taken out of the cell text and put back as ⟦n⟧ after it
+                    sizes = sorted(c["size"] for c in tb.chars if not c["text"].isspace())
+                    lim = 0.8 * sizes[len(sizes) // 2] if sizes else 0
+                    mk = [c for c in tb.chars if c["size"] <= lim and c["text"] in "0123456789,"]
+                    keep = set(id(c) for c in mk)
+                    tb = tb.filter(lambda o: o.get("object_type") != "char" or id(o) not in keep)
+                    rows = tb.extract_table(dict(vertical_strategy="explicit", explicit_vertical_lines=cx, horizontal_strategy="explicit",
+                                                 explicit_horizontal_lines=cy, text_x_tolerance=1.5, text_y_tolerance=2))
+                except Exception:
+                    rows, mk = None, []
+                if not rows:
+                    continue
+                grp = []
+                for c in sorted(mk, key=lambda c: (round(c["top"]), c["x0"])):
+                    if grp and abs(grp[-1][-1]["top"] - c["top"]) < 1.5 and -1.5 <= c["x0"] - grp[-1][-1]["x1"] < 2.5:
+                        grp[-1].append(c)
+                    else:
+                        grp.append([c])
+                for g in grp:
+                    n = "".join(c["text"] for c in g).strip(",")
+                    xm, ym = (g[0]["x0"] + g[-1]["x1"]) / 2, (g[0]["top"] + g[0]["bottom"]) / 2
+                    ci = [j for j in range(len(cx) - 1) if cx[j] <= xm < cx[j + 1]]
+                    ri = [i for i in range(len(cy) - 1) if cy[i] <= ym < cy[i + 1]]
+                    if re.fullmatch(r"\d{1,3}(?:,\d{1,3})*", n) and ci and ri and ri[0] < len(rows) and ci[0] < len(rows[ri[0]]):
+                        rows[ri[0]][ci[0]] = (rows[ri[0]][ci[0]] or "") + "\u27e6" + n + "\u27e7"
+                res.append(dict(bbox=(x0, cy[0], x1, cy[-1]), rows=rows, keepnl=True))
+        return res
+
     def find_tables(self, page, boxes):
         res = []
         try:
@@ -289,6 +376,35 @@ class Doc:
                 continue
             res.append(dict(bbox=(x0, top, x1, bot), rows=rows))
         return res
+
+
+def render_figs(pdf_path, cfg, out_dir):
+    """Pictures of the drawings listed in cfg["figs"] (page, bbox in points, src = file name): the region of the PDF page as a small PNG.
+    "white": the grey of a shaded box behind the drawing becomes white."""
+    import os
+    import subprocess
+    import tempfile
+    from PIL import Image
+    os.makedirs(out_dir, exist_ok=True)
+    dpi = 200
+    k = dpi / 72.0
+    for f in cfg.get("figs", []):
+        x0, t0, x1, b0 = f["bbox"]
+        with tempfile.TemporaryDirectory() as td:
+            base = os.path.join(td, "f")
+            subprocess.run(["pdftoppm", "-r", str(dpi), "-f", str(f["page"]), "-l", str(f["page"]), "-x", str(int(x0 * k)), "-y", str(int(t0 * k)),
+                            "-W", str(int((x1 - x0) * k)), "-H", str(int((b0 - t0) * k)), "-png", "-singlefile", pdf_path, base], check=True)
+            im = Image.open(base + ".png").convert("RGB")
+        if f.get("white"):
+            px = im.load()
+            for y in range(im.height):
+                for x in range(im.width):
+                    r, g, b = px[x, y]
+                    if abs(r - 217) <= 3 and abs(g - 217) <= 3 and abs(b - 217) <= 3:
+                        px[x, y] = (255, 255, 255)
+        im = im.quantize(colors=48, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+        im.save(os.path.join(out_dir, f["src"]), optimize=True)
+        f["w"], f["h"] = im.size
 
 
 # ---------------------------------------------------------------------------------------------- pass 2
@@ -825,11 +941,48 @@ class Builder:
                 items.append((pi, l.top, "line", l))
             for t in p["tables"]:
                 items.append((pi, t["bbox"][1], "table", t))
+            for f in p.get("figs", []):
+                items.append((pi, f["bbox"][1], "fig", f))
         items.sort(key=lambda it: (it[0], it[1]))
         self.assemble(items)
+        self.apply_fixes()
         for n, t in self.endnotes.items():           # notes the text never points to are kept too
             self.notes.setdefault(n, t)
         return self.blocks
+
+    def apply_fixes(self):
+        """cfg "fixes": [(old text, new text)] for the few places where the PDF layout cannot be read (a formula written as a fraction).
+        "\n\n" in the new text starts further paragraphs, which continue the paragraph they follow."""
+        for old, new in self.cfg.get("fixes", []):
+            out = []
+            for b in self.blocks:
+                if b["kind"] == "p" and old in b["text"]:
+                    parts = b["text"].replace(old, new).split("\n\n")
+                    first = dict(b, text=parts[0].strip())
+                    out.append(first)
+                    for t in parts[1:]:
+                        out.append(dict(b, text=t.strip(), marker="", level=0, cont=True, note="") if t.strip() else None)
+                    out = [x for x in out if x]
+                else:
+                    out.append(b)
+            self.blocks[:] = out
+
+    def cell_notes(self, text, page):
+        """Footnote markers ⟦n⟧ of a table cell (numbers as printed on the page) become the document-wide unique ones, like in mm()."""
+        pn = self.page_notes.get(page, {})
+
+        def rep(m):
+            out = []
+            for n in note_ids(m.group(1)):
+                if n not in pn:
+                    continue
+                key = (page, n)
+                if key not in self.uid:
+                    self.uid[key] = len(self.uid) + 1
+                    self.notes[str(self.uid[key])] = pn[n]
+                out.append(str(self.uid[key]))
+            return "\u27e6" + ",".join(out) + "\u27e7" if out else ""
+        return MARK.sub(rep, text)
 
     def mm(self, l):
         """Line text with its footnote markers renumbered to document-wide unique numbers."""
@@ -911,10 +1064,48 @@ class Builder:
             r = x0 - d.margin
             return 0 if r < 36 else (1 if r < 64 else 2)
 
+        keep_box = False                  # a table / figure of the current shaded box was just emitted: the box goes on
+
+        def box_of(pi):
+            """Shaded box a table or figure on page pi belongs to: the box of the block before it (same or previous page), else a new one."""
+            nonlocal box_id
+            last = out[-1] if out else None
+            if last and last.get("box") and (last.get("bp") or last["page"]) in (pi, pi + 1):
+                return last["box"]
+            box_id += 1
+            return box_id
+
         for pi, top, kind, obj in items:
+            if kind == "fig":
+                flush()
+                prev_line = None
+                heading_state = None
+                fb = box_of(pi) if obj.get("inbox", True) and obj.get("box", True) else 0
+                out.append(dict(kind="fig", src=obj["src"], alt=obj.get("alt", ""), text=obj.get("text", []), w=obj.get("w", 0), h=obj.get("h", 0),
+                                box=fb, bp=pi + 1, page=pi))
+                keep_box = bool(fb)
+                continue
             if kind == "table":
                 flush()
                 prev_line = None
+                if obj.get("keepnl"):
+                    rows = [[clean(re.sub(r"\n(?=•)", "\u23ce", c or "").replace("\n", " ")) for c in r] for r in obj["rows"]]
+                    rows = [[self.cell_notes(c, pi + 1) for c in r] for r in rows]
+                    tb_box = box_of(pi)
+                    if out and out[-1]["kind"] == "table" and out[-1]["page"] == pi - 1 and len(out[-1]["rows"][0]) == len(rows[0]) and top < 150:
+                        if rows and out[-1]["rows"][0] == rows[0]:
+                            rows = rows[1:]
+                        if rows and rows[0][0] and not any(rows[0][1:]) and re.match(r"[\[\u2022a-z]", rows[0][0]) and len(out[-1]["rows"]) > 1:
+                            prev = out[-1]["rows"][-1]                 # the last row of the page before goes on: its first cell continues
+                            prev[0] = prev[0] + ("\u23ce" if rows[0][0].startswith("\u2022") else " ") + rows[0][0]
+                            rows = rows[1:]
+                        out[-1]["rows"] += rows
+                        out[-1]["page"] = pi
+                        out[-1]["bp"] = pi + 1
+                    else:
+                        out.append(dict(kind="table", rows=rows, hdr=1, page=pi, box=tb_box, bp=pi + 1))
+                    keep_box = True
+                    continue
                 rows = [[clean((c or "").replace("\n", " ")) for c in r] for r in obj["rows"]]
                 if out and out[-1]["kind"] == "table" and out[-1]["page"] == pi and False:
                     pass
@@ -930,12 +1121,15 @@ class Builder:
             l = obj
             # box bookkeeping: a new group starts when the box changes or an "Example N" title opens one
             if l.boxed:
-                if (last_box_page is None) or (l.page - last_box_page > 1) or (not cur and not (out and out[-1].get("box") and out[-1].get("page") == l.page - 1)):
+                if keep_box:
+                    pass
+                elif (last_box_page is None) or (l.page - last_box_page > 1) or (not cur and not (out and out[-1].get("box") and out[-1].get("page") == l.page - 1)):
                     if not (out and out[-1].get("box") and out[-1].get("page") == l.page - 1 and l.page != last_box_page):
                         box_id += 1
                 if re.match(r"^(Example|Case study|Illustration|Scenario)\b", l.text, re.I) and l.bold:
                     box_id += 1
                 last_box_page = l.page
+            keep_box = False
             if heading_state and heading_state.get("rem", 0) > 0 and l.bold and not l.boxed:
                 heading_state["rem"] -= len(norm_title(re.sub(r"⟦\d+⟧", "", l.text)))
                 heading_state["last"] = l

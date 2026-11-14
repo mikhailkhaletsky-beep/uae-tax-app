@@ -181,7 +181,7 @@ def block_plain(b):
     if k == "table":
         return "\n".join(" | ".join(plain_marks(c) for c in r if c) for r in b["rows"])
     if k == "fig":
-        return b.get("alt", "")
+        return (b.get("alt", "") + "\n" + "\n".join(t for _, t in b.get("text", []))).strip()
     if k == "defs":
         return "\n".join(plain_marks(f"{r[0]}: {r[1]}") for r in b["rows"])
     if k == "pre":
@@ -222,6 +222,8 @@ def guide_blocks(ed):
     cache = os.path.join(PARSED_DIR, key + ".json")
     if os.path.exists(cache) and os.path.getmtime(cache) >= os.path.getmtime(pdf) and os.path.getmtime(cache) >= os.path.getmtime(GP.__file__):
         return json.load(open(cache, encoding="utf-8"))
+    if (ed.get("gcfg") or {}).get("figs"):                  # drawings shown as pictures (site/img/, served as /assets/img/)
+        GP.render_figs(pdf, ed["gcfg"], os.path.join(ROOT, "site", "img"))
     d = GP.Doc(pdf, ed.get("gcfg"))
     d.load()
     b = GP.Builder(d)
@@ -301,6 +303,11 @@ def load_guide(act, ed):
             if b["kind"] == "defs":
                 for r in b["rows"]:
                     used.update(str(r[2]).split(","))
+            if b["kind"] == "table":                           # footnote marks inside cells
+                for r in b["rows"]:
+                    for c in r:
+                        for m in GP.MARK.finditer(c or ""):
+                            used.update(GP.note_ids(m.group(1)))
     notes = {k: v for k, v in g["notes"].items() if k in used}
     leftover = {k: v for k, v in g["notes"].items() if k not in used}
     return dict(act=act["id"], ed=ed["id"], pre=pre, sections=sections, notes=notes, leftover=leftover, arts=arts,

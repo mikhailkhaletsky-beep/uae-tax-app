@@ -368,15 +368,29 @@ def render_block(b, aid, ctx_art, collect, page_ed):
         rows = b["rows"]
         nh = b.get("hdr", 1)
         def cell(tag, c):
-            c = c or ""
-            return f"<{tag}>{L(c)}</{tag}>"
+            c = re.sub("\u27e6([\\d,]+)\u27e7", lambda m: "\ue0f0" + m.group(1) + "\ue0f1", c or "")      # footnote marks inside a cell
+            h = re.sub("\ue0f0([\\d,]+)\ue0f1", lambda m: fn_mark(m.group(1)), L(c).replace(chr(0x23ce), "<br>"))
+            return f"<{tag}>{h}</{tag}>"
         head = "".join("<tr>" + "".join(cell("th", c) for c in r) + "</tr>" for r in rows[:nh])
         body = "".join("<tr>" + "".join(cell("td", c) for c in r) + "</tr>" for r in rows[nh:])
         return (f'<div class="scroll"><table class="grid gtab">' + (f"<thead>{head}</thead>" if head else "") +
                 f"<tbody>{body}</tbody></table></div>")
     if k == "fig":
-        return (f'<figure class="gfig"><img src="{esc(b["src"])}" alt="{esc(b.get("alt", ""))}" loading="lazy" width="{b.get("w", 0) or ""}" height="{b.get("h", 0) or ""}">'
-                + (f'<figcaption>{L(b["caption"])}</figcaption>' if b.get("caption") else "") + "</figure>")
+        tv = ""
+        if b.get("text"):                       # the drawing as text: for screen readers, search and copying
+            items, depth = "", 0
+            for lvl, t in b["text"]:
+                while depth < lvl:
+                    items += "<ul>"
+                    depth += 1
+                while depth > lvl:
+                    items += "</ul>"
+                    depth -= 1
+                items += f"<li>{L(t)}</li>"
+            items += "</ul>" * depth
+            tv = f'<details class="figtext"><summary>Text version of the figure</summary><ul>{items}</ul></details>'
+        return (f'<figure class="gfig"><img src="/assets/img/{esc(b["src"])}" alt="{esc(b.get("alt", ""))}" loading="lazy" width="{b.get("w", 0) or ""}" height="{b.get("h", 0) or ""}">'
+                + (f'<figcaption>{L(b["caption"])}</figcaption>' if b.get("caption") else "") + "</figure>" + tv)
     if k == "pre":
         return f'<div class="scroll"><pre class="layout">{esc(b["text"])}</pre></div>'
     if k == "etable":
@@ -401,7 +415,7 @@ def render_blocks(blocks, aid, ctx, collect, page_ed):
         b = blocks[i]
         if b.get("box"):
             j = i
-            while j < len(blocks) and blocks[j].get("box") == b["box"] and blocks[j]["kind"] == "p":
+            while j < len(blocks) and blocks[j].get("box") == b["box"] and blocks[j]["kind"] in ("p", "table", "fig"):
                 j += 1
             inner = "".join(render_block(x, aid, ctx, collect, page_ed) for x in blocks[i:j])
             out.append(f'<div class="gbox">{inner}</div>')

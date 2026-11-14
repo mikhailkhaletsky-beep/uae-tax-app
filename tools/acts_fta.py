@@ -6,6 +6,8 @@ the publication dates shown in the file name or on the cover (month only where o
 """
 import re
 
+import copy
+
 T_RES = "Tax residency and nexus"
 T_EXE = "Exempt persons"
 T_FZ = "Free zones"
@@ -89,6 +91,7 @@ GUIDES = [
     ("CTGEXI1", "2023-10-16", "Dividends and Participation Exemption", T_REL, "Exempt Income: Dividends and Participation Exemption", "Corporate Tax Guide"),
     ("CTGBRR1", "2024-04-17", "Business Restructuring Relief", T_REL, "Business Restructuring Relief", "Corporate Tax Guide"),
     ("CTGNRP1", "2023-10-08", "Non-Resident Persons", T_RES, "Non-Resident Persons", "Corporate Tax Guide"),
+    ("CTGFSI1", "2023-11-16", "Foreign Source Income", T_INC, "Taxation of Foreign Source Income", "Corporate Tax Guide"),
     ("TTGREG1", "2026-08", "Top-up Tax: scope and registration", T_TOP, "Scope and Registration", "Top-up Tax Guide"),
     ("TTGEIE1", "2026-08-25", "Top-up Tax: Excluded Entities", T_TOP, "Excluded Entities and Investment Entities", "Top-up Tax Guide"),
 ]
@@ -153,6 +156,69 @@ TP_GUIDES = [
     ("TPGTR1", "2024-10", "Tax Resident and Tax Residency Certificate", "Tax Resident and Tax Residency Certificate"),
 ]
 
+# Parser settings of single guides (see guideparse.py): qbox = question boxes; boxtables = tables drawn inside shaded "Example" boxes;
+# figs = drawings shown as pictures (page, bbox in PDF points, file in site/img, "white" = grey of the box becomes white, alt text, text version
+# as [(nesting level, text)]); fixes = [(text as parsed, text as it should read)] for a formula written as a fraction.
+FSI_FIG1 = [
+    (0, "Taxable Person"),
+    (1, "Resident Person"),
+    (2, "Juridical person: Subject to Corporate Tax on foreign source income."),
+    (2, "Natural person: Conducts a Business or Business Activity in the UAE?"),
+    (3, "No: Not subject to Corporate Tax."),
+    (3, "Yes: Does Turnover from a Business or Business Activity exceed AED 1 million in a Gregorian calendar year?*"),
+    (4, "No: Not subject to Corporate Tax."),
+    (4, "Yes: Subject to Corporate Tax on foreign source income that relates to a Business or Business Activities conducted in the UAE."),
+    (1, "Non-Resident Person"),
+    (2, "Juridical person: Has a Permanent Establishment in the UAE?"),
+    (3, "No: Foreign source income is not subject to Corporate Tax (subject to Corporate Tax only on State Sourced Income*** or income from UAE nexus)."),
+    (3, "Yes: Subject to Corporate Tax on foreign source income that is attributable to a Permanent Establishment in the UAE."),
+    (2, "Natural person: Has Permanent Establishment in the UAE?**"),
+    (3, "No: Not subject to Corporate Tax."),
+    (3, "Yes: Does Turnover attributable to Permanent Establishment exceed AED 1 million in a Gregorian calendar year?"),
+    (4, "No: Not subject to Corporate Tax."),
+    (4, "Yes: Subject to Corporate Tax on foreign source income that is attributable to a Permanent Establishment in the UAE."),
+    (0, "* Wages, Personal Investment income, and Real Estate Investment income do not count as Turnover from a Business or Business Activity."),
+    (0, "** If a natural person conducts a Business or Business Activity in the UAE, they are a Resident Person under the Corporate Tax Law, "
+        "subject to an applicable Double Taxation Agreement."),
+    (0, "*** Subject to withholding tax, currently at a rate of 0%."),
+]
+FSI_PE_ALT = ("Diagram. Company A is incorporated and tax resident in Country X and has a Permanent Establishment in the UAE (UAE PE). "
+              "The UAE PE grants a loan to Company G in Country Y. Company G makes an interest payment to the UAE PE.")
+FSI_PE_TEXT = [
+    (0, "Company A: Country X; has the UAE PE in the UAE."),
+    (0, "UAE PE (UAE): grants a Loan to Company G."),
+    (0, "Company G: Country Y."),
+    (0, "Company G pays Interest (Interest payment) to the UAE PE."),
+]
+GUIDE_CFG = {
+    "CTGTXR1": dict(qbox=True),
+    "CTGFSI1": dict(
+        boxtables=True,
+        figs=[
+            dict(page=18, bbox=(66, 123, 595.3, 548), src="ctgfsi1-fig1.png", inbox=False,
+                 alt="Flow chart: how foreign source income is taxed for a Taxable Person that is a Resident or a Non-Resident Person, "
+                     "a juridical person or a natural person. A text version follows.", text=FSI_FIG1),
+            dict(page=25, bbox=(125, 172, 462, 326), src="ctgfsi1-ex4.png", white=True, alt=FSI_PE_ALT, text=FSI_PE_TEXT),
+            dict(page=39, bbox=(125, 205, 462, 378), src="ctgfsi1-ex9.png", white=True, alt=FSI_PE_ALT, text=FSI_PE_TEXT),
+            dict(page=48, bbox=(78, 577, 518, 762), src="ctgfsi1-ex19.png", white=True,
+                 alt="Timeline. Tax Period of Company A in the UAE: 1 April 2024 to 31 March 2025. Tax Period of the payer in Country X: "
+                     "1 January 2025 to 31 December 2025. The loan is issued on 1 January 2025; the interest for calendar year 2025 is due on "
+                     "31 December 2025.",
+                 text=[(0, "Tax Period of Company A in the UAE: from 1 April 2024 to 31 March 2025."),
+                       (0, "Loan issued: 1 January 2025."),
+                       (0, "Tax Period of payer in Country X: from 1 January 2025 to 31 December 2025."),
+                       (0, "Payment of interest due for calendar year 2025: 31 December 2025."),
+                       (0, "Interest derived by Company A for the period 1 January 2025 to 31 March 2025:"),
+                       (1, "Taxable in Tax Period 1 April 2024 to 31 March 2025 in the UAE."),
+                       (1, "Tax paid in next Tax Period in Country X.")]),
+        ],
+        fixes=[("formula: X*Y Corporate Tax due on relevant foreign source income = Z X= Corporate Tax due on total Taxable Income of the "
+                "Taxable Person before any Foreign Tax Credit Y= Relevant foreign source income Z= Total Taxable Income of the Taxable Person",
+                "formula:\n\nCorporate Tax due on relevant foreign source income = (X*Y) / Z\n\nX= Corporate Tax due on total Taxable Income of "
+                "the Taxable Person before any Foreign Tax Credit\n\nY= Relevant foreign source income\n\nZ= Total Taxable Income of the Taxable Person")],
+    ),
+}
+
 PUBLISHER = "Federal Tax Authority"
 
 
@@ -205,7 +271,7 @@ def build():
             id=key, slug=code.lower(), group="fta", sub="guide", short=f"{family} {code}", code=code, numlabel=code,
             name=name, subject=title, title=f"{family} {code}: {title}", topics=[topic], status="in_force", status_label="Current",
             issued=issued, effective="", en_only=True, guide=True,
-            editions=[_edition(f"{code}_EN-FTA", issued, fmt="guide", gcfg=(dict(qbox=True) if code == "CTGTXR1" else None))],
+            editions=[_edition(f"{code}_EN-FTA", issued, fmt="guide", gcfg=copy.deepcopy(GUIDE_CFG.get(code)))],
         )
         acts.append(a)
     for code, issued, name, title in TP_GUIDES:

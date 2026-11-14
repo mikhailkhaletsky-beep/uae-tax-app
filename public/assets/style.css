@@ -272,6 +272,12 @@ table.gtab td,table.gtab th{min-width:5em}
 .gfig{margin:16px 0;text-align:center}
 .gfig img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:6px;background:#fff}
 .gfig figcaption{font-size:13px;color:var(--muted);margin-top:4px}
+.figtext{margin:6px 0 16px;font-size:14px;font-family:var(--sans)}
+.figtext summary{cursor:pointer;color:var(--link)}
+.figtext ul{margin:.4em 0;padding-left:1.3em}
+.gbox .gfig{margin:10px 0}
+.gbox .scroll{margin:10px 0}
+.gbox table.gtab{background:var(--bg)}
 .toc li.gl3 a{padding-left:26px;font-size:12.5px}
 
 /* private clarifications: legal references under each topic */
