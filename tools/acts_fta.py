@@ -92,6 +92,8 @@ GUIDES = [
     ("CTGBRR1", "2024-04-17", "Business Restructuring Relief", T_REL, "Business Restructuring Relief", "Corporate Tax Guide"),
     ("CTGNRP1", "2023-10-08", "Non-Resident Persons", T_RES, "Non-Resident Persons", "Corporate Tax Guide"),
     ("CTGFSI1", "2023-11-16", "Foreign Source Income", T_INC, "Taxation of Foreign Source Income", "Corporate Tax Guide"),
+    ("CTGEPX1", "2023-12-12", "Extractive and Non-Extractive Business", T_EXE,
+     "Taxation of Extractive Business and Non-Extractive Natural Resource Business", "Corporate Tax Guide"),
     ("TTGREG1", "2026-08", "Top-up Tax: scope and registration", T_TOP, "Scope and Registration", "Top-up Tax Guide"),
     ("TTGEIE1", "2026-08-25", "Top-up Tax: Excluded Entities", T_TOP, "Excluded Entities and Investment Entities", "Top-up Tax Guide"),
 ]
@@ -158,7 +160,9 @@ TP_GUIDES = [
 
 # Parser settings of single guides (see guideparse.py): qbox = question boxes; boxtables = tables drawn inside shaded "Example" boxes;
 # figs = drawings shown as pictures (page, bbox in PDF points, file in site/img, "white" = grey of the box becomes white, alt text, text version
-# as [(nesting level, text)]); fixes = [(text as parsed, text as it should read)] for a formula written as a fraction.
+# as [(nesting level, text)]); fixes = [(text as parsed, text as it should read)] for a formula written as a fraction, a word broken by a narrow
+# table cell, a label that must be a paragraph of its own; tablefixes = a table header written over two rows; boxjoin = a paragraph in a box
+# goes on in the box of the next page.
 FSI_FIG1 = [
     (0, "Taxable Person"),
     (1, "Resident Person"),
@@ -192,6 +196,18 @@ FSI_PE_TEXT = [
 ]
 GUIDE_CFG = {
     "CTGTXR1": dict(qbox=True),
+    "CTGEPX1": dict(
+        boxtables=True, boxjoin=True,
+        fixes=[("Revenue of other Business x100 Total Revenue", "(Revenue of other Business / Total Revenue) x 100"),
+               ("400,000 x 100 = 26.67% (R1) 1,500,000", "(400,000 / 1,500,000) x 100 = 26.67% (R1)"),
+               ("the type of income test: Interest", "the type of income test:\n\nInterest"),
+               ("the 5% condition: The table below", "the 5% condition:\n\nThe table below"),
+               ("Dividend from UAE quoted companie s", "Dividend from UAE quoted companies"), ("Sale of used equipme nt", "Sale of used equipment")],
+        # Example 6: "2024" and "2025" stand over two columns each in the PDF
+        tablefixes=[dict(find="Gas extraction income", header=[
+            "No.", "Income type", "Source of income", "2024: Amount of income earned (AED \u2018000)", "2024: Percentage of total Revenue",
+            "2025: Amount of income earned (AED \u2018000)", "2025: Percentage of total Revenue"])],
+    ),
     "CTGFSI1": dict(
         boxtables=True,
         figs=[

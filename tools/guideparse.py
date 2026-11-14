@@ -961,11 +961,19 @@ class Builder:
                     first = dict(b, text=parts[0].strip())
                     out.append(first)
                     for t in parts[1:]:
-                        out.append(dict(b, text=t.strip(), marker="", level=0, cont=True, note="") if t.strip() else None)
+                        out.append(dict(b, text=t.strip(), marker="", level=0, cont=bool(b.get("marker") or b.get("cont")), note="") if t.strip() else None)
                     out = [x for x in out if x]
                 else:
                     out.append(b)
             self.blocks[:] = out
+            for b in self.blocks:                                  # the same words inside table cells (a word broken by a narrow cell)
+                if b["kind"] == "table":
+                    b["rows"] = [[c.replace(old, new) if c else c for c in r] for r in b["rows"]]
+        for tf in self.cfg.get("tablefixes", []):
+            # a header written over two rows with a heading spanning columns: the first row is replaced by the given one
+            for b in self.blocks:
+                if b["kind"] == "table" and any(tf["find"] in (c or "") for r in b["rows"] for c in r):
+                    b["rows"][0] = list(tf["header"])
 
     def cell_notes(self, text, page):
         """Footnote markers ⟦n⟧ of a table cell (numbers as printed on the page) become the document-wide unique ones, like in mm()."""
@@ -1099,6 +1107,12 @@ class Builder:
                             prev = out[-1]["rows"][-1]                 # the last row of the page before goes on: its first cell continues
                             prev[0] = prev[0] + ("\u23ce" if rows[0][0].startswith("\u2022") else " ") + rows[0][0]
                             rows = rows[1:]
+                        elif rows and len(out[-1]["rows"]) > 1 and not rows[0][0] and sum(1 for c in rows[0] if c) == 1:
+                            k = [i for i, c in enumerate(rows[0]) if c][0]       # a narrow cell goes on with a word or two in the next page
+                            if not re.search(r"\d", rows[0][k]):
+                                prev = out[-1]["rows"][-1]
+                                prev[k] = prev[k] + ("\u23ce" if rows[0][k].startswith("\u2022") else " ") + rows[0][k]
+                                rows = rows[1:]
                         out[-1]["rows"] += rows
                         out[-1]["page"] = pi
                         out[-1]["bp"] = pi + 1
@@ -1225,7 +1239,8 @@ class Builder:
                     # across a page break: continue only when the paragraph looks unfinished
                     prev = cur["parts"][-1] if cur["parts"] else ""
                     unfinished = not re.search(r"[.:;?!”\")]\s*(?:⟦\d+⟧)*$", prev.replace(B_OFF, "").replace(B_ON, ""))
-                    if not unfinished or l.x0 > d.margin + 3 and not (cur["marker"] and l.x0 >= cur["x0"]) or bool(l.boxed) != bool(cur["box"]):
+                    if not unfinished or l.x0 > d.margin + 3 and not (cur["marker"] and l.x0 >= cur["x0"]) and not (self.cfg.get("boxjoin") and l.boxed) \
+                            or bool(l.boxed) != bool(cur["box"]):
                         brk = True
             if brk:
                 if mk:
